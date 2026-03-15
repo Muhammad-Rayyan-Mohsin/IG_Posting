@@ -1,0 +1,322 @@
+[
+  {
+    "id": "mosque_ext_01",
+    "category": "mosque_exterior",
+    "prompt": "Grand mosque with intricate geometric marble facade and three golden domes catching the last rays of sunset. A shallow reflecting pool in the foreground mirrors the entire structure in perfect symmetry. Camera: slow dolly forward through a stone courtyard archway, shallow depth of field on foreground arch columns, 35mm film look. Lighting: golden hour backlighting with warm amber fill bouncing off wet courtyard tiles, long diagonal shadows stretching across the ground. Dust particles drift lazily through the light shafts beneath the archway. Palette anchors: deep amber, burnished gold, twilight indigo, warm cream. Atmosphere: still, reverent, the courtyard is empty and silent.",
+    "mood": "majestic",
+    "duration_suggestion": 8,
+    "camera": "slow dolly forward through archway, shallow DoF, 35mm film",
+    "lighting": "golden hour backlighting with warm amber fill",
+    "color_palette": ["deep amber", "burnished gold", "twilight indigo", "warm cream"]
+  },
+  {
+    "id": "mosque_ext_02",
+    "category": "mosque_exterior",
+    "prompt": "White limestone mosque with a single turquoise dome and slender minaret, perched on a hillside above a misty valley. Dew beads cling to the wrought-iron courtyard gate in the foreground. Camera: static wide shot, anamorphic 2.0x lens with subtle horizontal flare from the rising sun, deep focus throughout. Lighting: pre-dawn blue ambient transitioning to soft pink first light cresting the hilltop behind the dome. Thin wisps of valley fog curl around the base of the minaret. Palette anchors: powder blue, blush pink, ivory stone, oxidized copper green. Atmosphere: hushed dawn stillness, the world holding its breath before morning.",
+    "mood": "serene",
+    "duration_suggestion": 8,
+    "camera": "static wide shot, anamorphic 2.0x lens, deep focus",
+    "lighting": "pre-dawn blue ambient transitioning to soft pink first light",
+    "color_palette": ["powder blue", "blush pink", "ivory stone", "oxidized copper green"]
+  },
+  {
+    "id": "mosque_ext_03",
+    "category": "mosque_exterior",
+    "prompt": "Ornate sandstone mosque with carved arabesques covering every surface, standing alone in a courtyard paved with hexagonal terra-cotta tiles. Rain has just stopped and every surface gleams with a thin film of water. Camera: slow crane shot descending from above the dome level down to courtyard ground level, 50mm lens, shallow depth of field shifting focus from dome detail to wet tiles. Lighting: overcast silver sky providing even diffused light, with a single break in the clouds sending one shaft of warm gold across the mosque entrance. Rainwater drips from carved stone eaves. Palette anchors: warm sandstone, wet terra-cotta, silver-grey cloud, one stripe of gold. Atmosphere: post-rain clarity, every detail sharp and saturated.",
+    "mood": "contemplative",
+    "duration_suggestion": 8,
+    "camera": "slow crane shot descending, 50mm lens, shifting focus",
+    "lighting": "overcast diffused with single warm shaft through cloud break",
+    "color_palette": ["warm sandstone", "wet terra-cotta", "silver-grey", "gold"]
+  },
+  {
+    "id": "mosque_ext_04",
+    "category": "mosque_exterior",
+    "prompt": "Ancient mud-brick mosque with a weathered wooden door and hand-carved geometric window screens, set against a deep cobalt twilight sky. A single brass lantern hangs beside the entrance, casting a warm amber glow on the textured earthen wall. Camera: steadicam push-in toward the illuminated doorway, 85mm lens compressing the background stars into soft bokeh points. Lighting: single warm key light from the lantern on the left, deep blue ambient twilight fill from the right. Fine dust particles float in the lantern glow. Palette anchors: cobalt blue, warm brass, raw sienna earth, midnight indigo. Atmosphere: intimate, ancient, a doorway between the earthly and the eternal.",
+    "mood": "mystical",
+    "duration_suggestion": 8,
+    "camera": "steadicam push-in toward doorway, 85mm lens, bokeh background",
+    "lighting": "single warm lantern key left, deep blue twilight fill right",
+    "color_palette": ["cobalt blue", "warm brass", "raw sienna", "midnight indigo"]
+  },
+  {
+    "id": "mosque_int_01",
+    "category": "mosque_interior",
+    "prompt": "Vast empty prayer hall with rows of crimson and navy carpet stretching toward a distant illuminated mihrab niche. Massive stone columns rise to pointed arches overhead, their surfaces carved with interlocking star patterns. Camera: slow dolly forward at knee height between two rows of columns, 35mm lens, deep focus capturing the receding perspective. Lighting: soft window light entering from high clerestory windows on the right, casting long parallelogram shapes of warm light across the carpet. Dust motes drift through each light shaft like suspended gold. Palette anchors: deep crimson, midnight navy, warm honey stone, dusty gold. Atmosphere: cavernous silence, the emptiness itself feels sacred.",
+    "mood": "contemplative",
+    "duration_suggestion": 8,
+    "camera": "slow dolly forward at knee height, 35mm lens, deep focus",
+    "lighting": "soft clerestory window light from right, diagonal shafts",
+    "color_palette": ["deep crimson", "midnight navy", "warm honey stone", "dusty gold"]
+  },
+  {
+    "id": "mosque_int_02",
+    "category": "mosque_interior",
+    "prompt": "Ornate mosque dome interior viewed from directly below, concentric rings of blue and gold geometric tilework spiraling upward to a central oculus that admits a perfect circle of white daylight. Camera: static upward shot, 24mm wide-angle lens, the circular composition drawing the eye inward and upward. Lighting: cool ambient blue from the tilework with a single column of bright natural light descending from the oculus, illuminating suspended dust in a visible cone. Tiny flecks of gold leaf glint where the light touches the mosaic. Palette anchors: lapis lazuli blue, hammered gold, white daylight, deep teal. Atmosphere: vertigo-inducing beauty, the dome feels infinite.",
+    "mood": "awe-inspiring",
+    "duration_suggestion": 4,
+    "camera": "static upward shot, 24mm wide-angle, centered composition",
+    "lighting": "cool blue ambient with single bright oculus light cone",
+    "color_palette": ["lapis lazuli blue", "hammered gold", "white daylight", "deep teal"]
+  },
+  {
+    "id": "mosque_int_03",
+    "category": "mosque_interior",
+    "prompt": "Row of identical pointed archways receding into shadow inside an empty mosque corridor, each arch framing the next in diminishing perspective. A single hanging brass lamp in the nearest arch glows warm orange. Camera: slow pan left revealing each successive arch, 50mm lens, shallow depth of field with the nearest arch sharp and the farthest dissolving into soft darkness. Lighting: single warm key light from the brass lamp, cool blue-grey ambient filling the deeper arches. The lamp casts a geometric shadow pattern from its pierced metalwork onto the stone floor. Palette anchors: warm orange, cool stone grey, deep shadow, polished brass. Atmosphere: meditative repetition, geometry leading the eye toward the unseen.",
+    "mood": "peaceful",
+    "duration_suggestion": 8,
+    "camera": "slow pan left through arches, 50mm lens, shallow DoF",
+    "lighting": "single warm brass lamp key, cool blue-grey ambient in depth",
+    "color_palette": ["warm orange", "cool stone grey", "deep shadow", "polished brass"]
+  },
+  {
+    "id": "nature_01",
+    "category": "nature_landscape",
+    "prompt": "Emerald green valley with a silver ribbon of river winding through it, low morning mist pooling in the hollows between rolling hills. Wildflowers — white, violet, pale yellow — dot the nearest hillside. Camera: slow drone dolly forward over the valley floor, 35mm lens equivalent, the mist parting gently as the camera advances. Lighting: soft diffused dawn light from a pale sky, warm gold touching only the highest hilltops while the valley remains in cool blue shadow. Mist tendrils curl and separate as air currents shift. Palette anchors: emerald green, silver mist, pale gold hilltops, cool blue shadow, violet wildflower. Atmosphere: the earth exhaling at first light, quiet and unhurried.",
+    "mood": "peaceful",
+    "duration_suggestion": 8,
+    "camera": "slow drone dolly forward over valley, 35mm lens",
+    "lighting": "soft diffused dawn, gold on hilltops, blue in valley shadow",
+    "color_palette": ["emerald green", "silver mist", "pale gold", "cool blue shadow", "violet"]
+  },
+  {
+    "id": "nature_02",
+    "category": "nature_landscape",
+    "prompt": "Ancient olive grove with gnarled silver-barked trunks, late afternoon sunlight filtering through the canopy and dappling the dry grass below. A single shaft of light illuminates a patch of wild thyme in bloom. Camera: handheld tracking shot moving slowly between the trees at waist height, 85mm lens compressing the grove into layered planes of bokeh. Lighting: golden hour backlighting through leaves creating rim-lit edges on every branch, with deep warm shadows pooling at the base of each trunk. Pollen and tiny insects drift through the backlit air. Palette anchors: silver-green olive leaf, golden light, dry ochre grass, warm bark brown. Atmosphere: timeless Mediterranean afternoon, heavy with warmth and stillness.",
+    "mood": "serene",
+    "duration_suggestion": 8,
+    "camera": "handheld tracking between trees, 85mm lens, layered bokeh",
+    "lighting": "golden hour backlighting through canopy, rim-lit branches",
+    "color_palette": ["silver-green", "golden light", "dry ochre", "warm bark brown"]
+  },
+  {
+    "id": "nature_03",
+    "category": "nature_landscape",
+    "prompt": "Turquoise glacial lake perfectly reflecting snow-dusted mountains, not a ripple on the surface. A single fallen birch log extends from the rocky shore into the water, its white bark peeling in paper-thin curls. Camera: static wide shot, anamorphic 2.0x lens with characteristic oval bokeh on distant snowflakes, the mirror reflection creating a vertical axis of symmetry. Lighting: overcast silver sky providing flat even illumination that saturates every color, no harsh shadows. Tiny snowflakes begin to fall, each one leaving a microscopic ripple that fractures the reflection for an instant. Palette anchors: glacial turquoise, snow white, birch bark cream, slate grey rock, silver sky. Atmosphere: absolute stillness broken only by falling snow, a scene of pristine solitude.",
+    "mood": "contemplative",
+    "duration_suggestion": 8,
+    "camera": "static wide shot, anamorphic 2.0x lens, symmetrical composition",
+    "lighting": "overcast silver sky, flat even illumination, saturated color",
+    "color_palette": ["glacial turquoise", "snow white", "birch bark cream", "slate grey", "silver"]
+  },
+  {
+    "id": "nature_04",
+    "category": "nature_landscape",
+    "prompt": "Dense bamboo forest with tall straight stalks rising to form a green cathedral ceiling overhead, a narrow dirt path curving out of sight between the stalks. Morning dew clings to every surface, each droplet a tiny lens. Camera: slow steadicam push-in along the path, 35mm film look with natural grain, the bamboo stalks creating a hypnotic parallax as the camera moves. Lighting: soft window light filtering down through the bamboo canopy, creating a green-tinted ambient glow with occasional bright spots where sunlight breaks through gaps. Dew drops catch the light and flash like tiny stars. Palette anchors: jade green, pale bamboo yellow, earth brown path, white-green filtered light. Atmosphere: enclosed and sheltering, the forest breathes quietly around the empty path.",
+    "mood": "mystical",
+    "duration_suggestion": 8,
+    "camera": "slow steadicam push-in along path, 35mm film with grain",
+    "lighting": "soft green-filtered canopy light, bright spots through gaps",
+    "color_palette": ["jade green", "pale bamboo yellow", "earth brown", "white-green light"]
+  },
+  {
+    "id": "desert_01",
+    "category": "desert",
+    "prompt": "Vast field of golden sand dunes stretching to the horizon, each dune casting a sharp shadow on its leeward side creating a repeating pattern of gold and deep violet. A thin veil of sand grains lifts off the nearest dune ridge and streams horizontally in the wind like smoke. Camera: slow pan right across the dune field from a low angle, 85mm lens compressing the dunes into layered abstract shapes. Lighting: low-angle late afternoon sun from the left, raking across the sand to reveal every ripple and wind-carved texture. Individual sand grains sparkle where they catch the direct light. Palette anchors: burnished gold, deep violet shadow, warm amber, pale sky blue. Atmosphere: immense solitude, the wind is the only presence, reshaping the earth grain by grain.",
+    "mood": "contemplative",
+    "duration_suggestion": 8,
+    "camera": "slow pan right, low angle, 85mm lens, compressed layers",
+    "lighting": "low-angle late afternoon sun from left, raking texture light",
+    "color_palette": ["burnished gold", "deep violet shadow", "warm amber", "pale sky blue"]
+  },
+  {
+    "id": "desert_02",
+    "category": "desert",
+    "prompt": "Single weathered sandstone arch formation standing in an empty desert basin, the rock surface etched with horizontal strata in bands of rust, cream, and burnt sienna. Through the arch opening, a distant flat horizon is visible under an enormous sky. Camera: slow dolly forward toward the arch, 50mm lens, the arch grows to fill the frame revealing increasingly fine detail in the rock grain. Lighting: soft overcast light with a warm color temperature, even illumination that brings out the sedimentary color bands without harsh shadows. Fine red dust particles hang in the still air inside the arch opening. Palette anchors: rust red, cream sandstone, burnt sienna, dove grey sky, dusty rose. Atmosphere: geological time made visible, silence measured in millennia.",
+    "mood": "awe-inspiring",
+    "duration_suggestion": 8,
+    "camera": "slow dolly forward toward arch, 50mm lens",
+    "lighting": "soft warm overcast, even illumination revealing strata detail",
+    "color_palette": ["rust red", "cream sandstone", "burnt sienna", "dove grey", "dusty rose"]
+  },
+  {
+    "id": "desert_03",
+    "category": "desert",
+    "prompt": "Close-up of wind-sculpted ripples in fine desert sand, each ripple casting a tiny shadow that creates a miniature mountain range across the frame. A single dried desert grass blade trembles in a faint breeze, its tip tracing a circle in the sand. Camera: static macro shot, 100mm macro lens, extremely shallow depth of field with only the central ripple crest in sharp focus. Lighting: golden hour sidelight from the right at an extreme low angle, every grain of sand throwing a visible shadow, the texture almost three-dimensional. A warm glow suffuses the entire frame. Palette anchors: pale gold, warm peach, soft shadow lavender, bright grain white. Atmosphere: intimate meditation on the smallest details of creation, the desert as calligraphy written by wind.",
+    "mood": "meditative",
+    "duration_suggestion": 4,
+    "camera": "static macro shot, 100mm lens, extremely shallow DoF",
+    "lighting": "golden hour extreme low-angle sidelight from right",
+    "color_palette": ["pale gold", "warm peach", "soft shadow lavender", "bright grain white"]
+  },
+  {
+    "id": "ocean_01",
+    "category": "ocean",
+    "prompt": "Turquoise ocean swell rolling in slow motion toward the camera, the wave face translucent and backlit by the sun, revealing internal green and blue gradients. White foam lace trails behind the wave crest. Camera: low-angle static shot at water level, anamorphic 2.0x lens with horizontal flare from the sun visible through the wave body, shallow depth of field on the curling lip. Lighting: golden hour backlighting directly behind the wave, transforming the water into a luminous jade screen, warm sun flare bleeding across the top of frame. Salt spray catches the light as individual glowing particles. Palette anchors: translucent jade, deep ocean blue, white foam, warm gold flare, sea green. Atmosphere: the raw power and beauty of moving water, suspended in a single slow breath.",
+    "mood": "dramatic",
+    "duration_suggestion": 4,
+    "camera": "low-angle static at water level, anamorphic 2.0x, shallow DoF",
+    "lighting": "golden hour backlighting through wave, lens flare",
+    "color_palette": ["translucent jade", "deep ocean blue", "white foam", "warm gold", "sea green"]
+  },
+  {
+    "id": "ocean_02",
+    "category": "ocean",
+    "prompt": "Calm open ocean at the blue hour just after sunset, the water surface like dark liquid mercury reflecting the gradient sky. A long gentle swell passes through the frame, its surface catching faint remaining light in a moving silver line. Camera: slow crane shot descending from fifteen feet above the water down to just inches above the surface, 35mm lens, the horizon line rising in frame as the camera lowers. Lighting: blue hour ambient — deep cobalt sky fading to pale rose at the horizon, no direct sun, the water a dark mirror reflecting the sky gradient. The last planet of evening appears as a single bright point. Palette anchors: deep cobalt, pale rose, dark mercury water, silver highlight, indigo. Atmosphere: the ocean at rest, vast and meditative, the boundary between water and sky dissolving.",
+    "mood": "peaceful",
+    "duration_suggestion": 8,
+    "camera": "slow crane shot descending to water level, 35mm lens",
+    "lighting": "blue hour ambient, cobalt to rose gradient, no direct sun",
+    "color_palette": ["deep cobalt", "pale rose", "dark mercury", "silver highlight", "indigo"]
+  },
+  {
+    "id": "ocean_03",
+    "category": "ocean",
+    "prompt": "Rocky coastline with dark volcanic stone, white sea foam surging into a narrow tidal channel and retreating in rhythmic slow motion. Barnacles and green algae cling to the wet rock surfaces. Camera: overhead static shot looking straight down into the tidal channel, 50mm lens, the framing turns the surging water into an abstract pattern of white on black. Lighting: overcast midday providing even diffused light, the wet rock surfaces gleaming with a satin sheen, the white foam almost luminous against the dark stone. Each surge leaves temporary lace patterns that dissolve in seconds. Palette anchors: volcanic black, brilliant white foam, dark seaweed green, wet stone charcoal, slate blue water. Atmosphere: primal rhythm, the patient conversation between stone and sea.",
+    "mood": "contemplative",
+    "duration_suggestion": 8,
+    "camera": "overhead static shot looking down, 50mm lens",
+    "lighting": "overcast diffused midday, wet surfaces gleaming",
+    "color_palette": ["volcanic black", "brilliant white", "dark seaweed green", "charcoal", "slate blue"]
+  },
+  {
+    "id": "stars_01",
+    "category": "starscape",
+    "prompt": "The Milky Way arching across a moonless desert sky, thousands of stars resolved into individual points against a deep indigo field. In the lower third of frame, dark sandstone mesa silhouettes create a jagged horizon line. Camera: slow pan right tracking along the Milky Way band, 24mm wide-angle lens, deep focus capturing both the star field and the mesa silhouettes. Lighting: pure starlight illumination — no artificial light, no moon — the Milky Way itself providing a faint silvery glow that barely kisses the top edges of the mesa. Occasional satellite or meteor streak. Palette anchors: deep indigo, stellar white, Milky Way silver-blue, warm star orange-red, mesa black silhouette. Atmosphere: cosmic scale, the viewer shrunk to a point beneath the turning vault of heaven.",
+    "mood": "awe-inspiring",
+    "duration_suggestion": 8,
+    "camera": "slow pan right along Milky Way, 24mm wide-angle, deep focus",
+    "lighting": "pure starlight, no moon, Milky Way glow on mesa edges",
+    "color_palette": ["deep indigo", "stellar white", "silver-blue", "warm star orange", "black silhouette"]
+  },
+  {
+    "id": "stars_02",
+    "category": "starscape",
+    "prompt": "Star-filled night sky reflected in a perfectly still desert oasis pool, the reflection so complete that the frame appears to contain two identical skies mirrored along a thin dark horizon line. A single date palm stands at the edge, its fronds motionless. Camera: static wide shot, 35mm lens at f/1.4 to gather maximum starlight, the symmetrical composition split exactly at the waterline. Lighting: cool starlight ambient with faint blue-white Milky Way glow, the palm silhouette pure black against both sky and reflection. A single bright planet casts a tiny elongated reflection in the water. Palette anchors: midnight blue, star white, oasis black, faint Milky Way lavender, palm silhouette ink. Atmosphere: doubled infinity, the boundary between heaven and earth erased by still water.",
+    "mood": "mystical",
+    "duration_suggestion": 8,
+    "camera": "static wide shot, 35mm f/1.4, symmetrical at waterline",
+    "lighting": "cool starlight ambient, faint Milky Way glow, pure silhouettes",
+    "color_palette": ["midnight blue", "star white", "oasis black", "faint lavender", "ink silhouette"]
+  },
+  {
+    "id": "stars_03",
+    "category": "starscape",
+    "prompt": "Close framing of a section of night sky densely packed with stars, the camera slowly tilting upward to reveal more of the Milky Way's dusty central band with its dark nebula lanes and reddish emission regions. No earthly horizon visible — pure sky. Camera: slow tilt upward, 50mm lens at f/1.2, the narrow field of view making individual star colors visible — blue-white, warm yellow, faint red. Lighting: deep space illumination, the cumulative glow of millions of stars creating a faint ambient wash, dark nebula lanes appearing as rivers of absence. Palette anchors: deep space black, blue-white stars, warm yellow stars, dusty rose nebula, dark nebula charcoal. Atmosphere: pure cosmic wonder, the viewer floating untethered among the stars.",
+    "mood": "awe-inspiring",
+    "duration_suggestion": 4,
+    "camera": "slow tilt upward, 50mm f/1.2, individual star colors visible",
+    "lighting": "deep space, cumulative starlight wash, dark nebula contrast",
+    "color_palette": ["deep space black", "blue-white", "warm yellow", "dusty rose nebula", "charcoal"]
+  },
+  {
+    "id": "calligraphy_01",
+    "category": "calligraphy",
+    "prompt": "Extreme close-up of a gold-tipped reed pen (qalam) laying fresh Thuluth script onto handmade cream paper, the wet ink glistening with a mirror-like surface tension. Each stroke varies from hairline thin to broad and confident. The pen moves rightward completing an elongated letter. Camera: slow dolly forward following the pen tip's movement across the page, 100mm macro lens, extremely shallow depth of field keeping only the wet ink edge sharp. Lighting: single warm key light from the upper left at a raking angle, making the wet gold ink gleam against the matte paper, the pen casting a soft diagonal shadow. Individual ink particles settle into the paper fiber. Palette anchors: liquid gold, cream paper, warm shadow, dark walnut pen, amber light. Atmosphere: the sacred act of transcription, each stroke deliberate and irreversible.",
+    "mood": "contemplative",
+    "duration_suggestion": 8,
+    "camera": "slow dolly forward following pen tip, 100mm macro, shallow DoF",
+    "lighting": "single warm key light from upper left, raking angle on wet ink",
+    "color_palette": ["liquid gold", "cream paper", "warm shadow", "dark walnut", "amber"]
+  },
+  {
+    "id": "calligraphy_02",
+    "category": "calligraphy",
+    "prompt": "Large-scale Arabic calligraphy carved into white marble, the letters filled with lapis lazuli and gold leaf inlay, set into the interior wall of a historic building. Centuries of touch have polished the protruding marble smooth while the recessed letters retain their vivid color. Camera: slow pan left across the inscription, 85mm lens, shallow depth of field drifting along the carved letterforms. Lighting: soft indirect daylight from a nearby window, the light catching the gold leaf inlay at angles that make individual letters flash and dim as the camera pans. Tiny imperfections in the gold leaf create a living texture. Palette anchors: white marble, lapis lazuli blue, gold leaf, warm daylight, cool stone shadow. Atmosphere: calligraphy as architecture, the word made permanent in stone and precious minerals.",
+    "mood": "majestic",
+    "duration_suggestion": 8,
+    "camera": "slow pan left across inscription, 85mm lens, shallow DoF",
+    "lighting": "soft indirect daylight from window, gold leaf catching and releasing light",
+    "color_palette": ["white marble", "lapis lazuli blue", "gold leaf", "warm daylight", "cool stone shadow"]
+  },
+  {
+    "id": "calligraphy_03",
+    "category": "calligraphy",
+    "prompt": "Overhead view of a calligrapher's workspace: a sheet of dark navy paper with a partially completed Bismillah in silver ink, surrounded by reed pens of various widths, a stone ink well, and scattered test strokes on scrap paper. The silver ink on the navy ground creates a luminous contrast. Camera: static overhead shot, 50mm lens, deep focus capturing the entire workspace as a composed still life. Lighting: soft window light from the top of frame casting gentle shadows beneath each pen and object, the silver ink reflecting a bright highlight line along each wet stroke. A faint curl of incense smoke drifts across the upper corner of frame. Palette anchors: deep navy, liquid silver, natural reed tan, stone grey inkwell, warm wood desk. Atmosphere: the quiet workspace of devotion, tools laid out with ritualistic care.",
+    "mood": "serene",
+    "duration_suggestion": 4,
+    "camera": "static overhead shot, 50mm lens, deep focus still life",
+    "lighting": "soft window light from top of frame, silver ink highlights",
+    "color_palette": ["deep navy", "liquid silver", "natural reed tan", "stone grey", "warm wood"]
+  },
+  {
+    "id": "sunrise_01",
+    "category": "sunrise_sunset",
+    "prompt": "Sunrise breaking over a flat desert horizon, the sun a molten orange disc distorted by atmospheric refraction into an elongated oval. The sky graduates through distinct bands — deep violet overhead, rose pink, pale apricot, then the blazing orange of the sun itself. Camera: static wide shot, anamorphic 2.0x lens creating a wide horizontal frame and characteristic oval flare around the sun. The sun slowly lifts and separates from the horizon line. Lighting: the sun itself is the sole light source, backlighting everything — the flat desert floor becomes a dark silhouette, the sky the entire subject. Heat shimmer distorts the lowest band of sky above the horizon. Palette anchors: molten orange, rose pink, pale apricot, deep violet overhead, black earth silhouette. Atmosphere: the first moment of a new day, primordial and elemental.",
+    "mood": "awe-inspiring",
+    "duration_suggestion": 8,
+    "camera": "static wide shot, anamorphic 2.0x lens, horizontal flare",
+    "lighting": "sole source backlighting from rising sun, heat shimmer at horizon",
+    "color_palette": ["molten orange", "rose pink", "pale apricot", "deep violet", "black silhouette"]
+  },
+  {
+    "id": "sunrise_02",
+    "category": "sunrise_sunset",
+    "prompt": "Sunset viewed through a grove of tall cypress trees, the trunks creating dark vertical bars against a sky that blazes in horizontal bands of tangerine, magenta, and fading lavender. Long shadows of the trees stretch directly toward the camera across golden grass. Camera: slow dolly forward between two cypress trunks, 50mm lens, the sun flickering in and out of view behind the bark as the camera advances. Lighting: golden hour direct backlighting, the cypress bark rim-lit with a thin bright edge, everything facing the camera in deep warm shadow. Grass seed heads glow like tiny lanterns where backlit. Palette anchors: tangerine sky, magenta band, dark cypress green-black, golden grass, lavender upper sky. Atmosphere: the day's last warmth caught between the trees, a corridor of light closing slowly.",
+    "mood": "peaceful",
+    "duration_suggestion": 8,
+    "camera": "slow dolly forward between cypresses, 50mm lens",
+    "lighting": "golden hour direct backlighting, rim-lit bark, backlit grass",
+    "color_palette": ["tangerine", "magenta", "dark cypress green-black", "golden grass", "lavender"]
+  },
+  {
+    "id": "sunrise_03",
+    "category": "sunrise_sunset",
+    "prompt": "Dawn light hitting the top of a low cloud layer from above, turning the clouds into a rolling landscape of pink and peach peaks and valleys. The sky above is clear deep blue with a single bright morning star still visible. Camera: slow crane shot ascending above the cloud tops, 35mm lens, the horizon line and cloud layer stretching to infinity. Lighting: pre-sunrise warm light from below the horizon painting only the cloud tops, while the undersides remain cool blue-grey. The clouds move slowly, their surfaces catching and releasing light as they billow. Palette anchors: cloud-top pink, peach highlight, deep morning blue, cool grey underbelly, bright star white. Atmosphere: floating above the world, witnessing the moment color returns to creation.",
+    "mood": "contemplative",
+    "duration_suggestion": 8,
+    "camera": "slow crane shot ascending above clouds, 35mm lens",
+    "lighting": "pre-sunrise warm light on cloud tops, cool blue-grey undersides",
+    "color_palette": ["cloud-top pink", "peach highlight", "deep morning blue", "cool grey", "star white"]
+  },
+  {
+    "id": "rain_01",
+    "category": "rain",
+    "prompt": "Heavy rain falling on the polished marble courtyard of a mosque, each raindrop creating a small crown-shaped splash frozen in slow motion. The wet marble reflects the overcast sky and the blurred golden form of a distant dome. Camera: low-angle static shot at ground level, 100mm macro lens, shallow depth of field isolating individual splash crowns in the foreground while the dome reflection blurs beautifully behind. Lighting: overcast silver sky providing soft even illumination, the wet marble acting as a mirror reflecting sky light upward onto the splash crowns, making each water crown luminous. Palette anchors: polished marble grey, silver rain, blurred gold dome reflection, white splash, cool sky blue. Atmosphere: sacred ablution, the rain consecrating every surface it touches.",
+    "mood": "contemplative",
+    "duration_suggestion": 4,
+    "camera": "low-angle static at ground level, 100mm macro, shallow DoF",
+    "lighting": "overcast silver sky, wet marble reflecting upward onto splashes",
+    "color_palette": ["polished marble grey", "silver rain", "blurred gold", "white splash", "cool sky blue"]
+  },
+  {
+    "id": "rain_02",
+    "category": "rain",
+    "prompt": "Rain streaming down a tall stained-glass window from inside an empty stone building, the colored glass panes — emerald, ruby, amber, cobalt — transformed into liquid streaks by the water flowing over the exterior surface. The interior is dim and cool. Camera: slow tilt upward along the window from base to pointed arch top, 50mm lens, the focus set on the rain rivulets crawling down the glass, throwing the colored panes into a soft impressionist blur. Lighting: overcast daylight behind the window providing backlight through the colored glass, the rain rivulets acting as moving lenses that bend and shift the colored light. Faint colored reflections dance on the stone floor below. Palette anchors: rain-blurred emerald, ruby glow, amber streak, cobalt blue, cool grey stone interior. Atmosphere: shelter from storm, the rain transforming rigid geometry into flowing watercolor.",
+    "mood": "serene",
+    "duration_suggestion": 8,
+    "camera": "slow tilt upward along window, 50mm lens, focus on rivulets",
+    "lighting": "overcast backlight through colored glass, rain as moving lens",
+    "color_palette": ["rain-blurred emerald", "ruby glow", "amber streak", "cobalt blue", "cool grey stone"]
+  },
+  {
+    "id": "rain_03",
+    "category": "rain",
+    "prompt": "Gentle rain falling on the broad green leaves of a tropical garden, each leaf bowing slightly under accumulated water before releasing it in a silver stream to the leaf below, creating a cascading chain of water transfers. Camera: slow pan right following the water's path downward through the leaf layers, 85mm lens, extremely shallow depth of field with only one leaf layer sharp at a time. Lighting: soft overcast daylight with warm undertones, the wet leaf surfaces reflecting a bright sky highlight, raindrops on the leaves appearing as silver beads catching the diffused light. The green of each leaf is saturated and vivid from the moisture. Palette anchors: vivid emerald, silver water bead, warm wet bark, bright sky reflection, deep shadow green. Atmosphere: the garden drinking, every surface alive and receiving, a gentle abundance.",
+    "mood": "peaceful",
+    "duration_suggestion": 8,
+    "camera": "slow pan right following water path, 85mm lens, shallow DoF",
+    "lighting": "soft warm overcast, wet surfaces reflecting bright sky highlights",
+    "color_palette": ["vivid emerald", "silver water bead", "warm wet bark", "bright sky reflection", "deep shadow green"]
+  },
+  {
+    "id": "mountain_01",
+    "category": "mountains",
+    "prompt": "Snow-covered mountain peak emerging from a dense cloud layer, the summit glowing warm pink in alpenglow while the clouds below remain cool blue-grey. The mountain face is scarred with dark rock ridges where the snow cannot cling, creating a pattern like dark veins on white skin. Camera: slow dolly forward toward the peak, 85mm lens compressing the clouds against the mountain into thick textured layers. Lighting: post-sunset alpenglow — no direct sun visible, but the upper atmosphere scatters warm pink light onto the summit only, creating a dramatic warm-cool contrast with the blue clouds below. Wind lifts a plume of snow crystals off the summit ridge, the crystals glowing pink against the darkening sky. Palette anchors: alpenglow pink, snow white, blue-grey cloud, dark rock charcoal, twilight indigo sky. Atmosphere: the mountain as a sentinel above the world, catching the last light that the lowlands have already lost.",
+    "mood": "majestic",
+    "duration_suggestion": 8,
+    "camera": "slow dolly forward, 85mm lens, compressed cloud layers",
+    "lighting": "post-sunset alpenglow on summit, warm-cool contrast with clouds",
+    "color_palette": ["alpenglow pink", "snow white", "blue-grey cloud", "dark rock charcoal", "twilight indigo"]
+  },
+  {
+    "id": "mountain_02",
+    "category": "mountains",
+    "prompt": "Mountain valley in autumn, the lower slopes covered in deciduous forest showing every shade from deep green through gold to burnt orange and crimson. A thin waterfall threads down a distant cliff face, its white line the only vertical element in the horizontal layers of color. Camera: static wide shot from an opposing ridge, anamorphic 2.0x lens, the wide frame emphasizing the horizontal color banding of the autumn forest. Lighting: soft overcast light with occasional breaks — when a cloud gap passes, a traveling patch of brighter illumination sweeps slowly across the valley floor, making each color band it touches momentarily glow. Mist clings to the treeline at mid-elevation. Palette anchors: deep evergreen, gold leaf, burnt orange, crimson maple, white waterfall, grey mist. Atmosphere: creation displaying its full palette, each tree an individual brushstroke in an enormous painting.",
+    "mood": "awe-inspiring",
+    "duration_suggestion": 8,
+    "camera": "static wide shot, anamorphic 2.0x, horizontal color bands",
+    "lighting": "overcast with traveling bright patch sweeping across valley",
+    "color_palette": ["deep evergreen", "gold leaf", "burnt orange", "crimson maple", "white waterfall"]
+  },
+  {
+    "id": "mountain_03",
+    "category": "mountains",
+    "prompt": "Narrow mountain pass between two towering dark rock walls, a shaft of midday sunlight penetrating the gap and illuminating a strip of green moss and small white wildflowers growing from a crack in the rock face. Everything outside the light shaft is in deep cool shadow. Camera: slow tilt upward from the illuminated flowers to the narrow strip of bright blue sky visible between the cliff tops far above, 24mm wide-angle lens, the vertical lines of the rock walls converging dramatically. Lighting: single shaft of direct overhead sun cutting through the narrow gap, creating extreme contrast between the brilliantly lit strip and the deep shadow everywhere else. The rock walls scatter faint warm reflected light into the shadows. Palette anchors: deep shadow blue-black, brilliant lit moss green, white wildflower, warm rock amber where light touches, bright sky blue above. Atmosphere: a hidden sanctuary within the mountain, light finding its way into the deepest places.",
+    "mood": "dramatic",
+    "duration_suggestion": 8,
+    "camera": "slow tilt upward through pass, 24mm wide-angle, converging walls",
+    "lighting": "single overhead sun shaft through narrow gap, extreme contrast",
+    "color_palette": ["deep shadow blue-black", "brilliant moss green", "white wildflower", "warm rock amber", "bright sky blue"]
+  }
+]

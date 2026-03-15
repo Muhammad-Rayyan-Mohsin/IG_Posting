@@ -1,0 +1,126 @@
+[
+  {
+    "id": 1,
+    "name": "general_islamic",
+    "hashtags": [
+      "#islam",
+      "#muslim",
+      "#quran",
+      "#islamicreminder",
+      "#faithjourney",
+      "#muslimcommunity",
+      "#quranreflections",
+      "#dailyislam",
+      "#islamicwisdom",
+      "#spiritualgrowth",
+      "#deen",
+      "#remindersfortheummah"
+    ]
+  },
+  {
+    "id": 2,
+    "name": "hadith_wisdom",
+    "hashtags": [
+      "#islam",
+      "#hadith",
+      "#sunnah",
+      "#prophetmuhammad",
+      "#hadithoftheday",
+      "#sunnahrevival",
+      "#propheticwisdom",
+      "#hadithreminder",
+      "#learnhadith",
+      "#followthesunnah",
+      "#islamicteachings"
+    ]
+  },
+  {
+    "id": 3,
+    "name": "quran_focused",
+    "hashtags": [
+      "#quran",
+      "#muslim",
+      "#islamicquotes",
+      "#quranverses",
+      "#quranandsunnah",
+      "#ayahoftheday",
+      "#quranreflection",
+      "#beautifulquran",
+      "#recitefromtheheart",
+      "#qurandaily",
+      "#livebythequran",
+      "#quranicwisdom",
+      "#wordsofallah"
+    ]
+  },
+  {
+    "id": 4,
+    "name": "spirituality_iman",
+    "hashtags": [
+      "#islam",
+      "#iman",
+      "#taqwa",
+      "#islamicspirituality",
+      "#strengtheniman",
+      "#heartsofdeen",
+      "#closertoallah",
+      "#innerpeaceislam",
+      "#faithandpatience",
+      "#trustinallah",
+      "#tawakkul"
+    ]
+  },
+  {
+    "id": 5,
+    "name": "daily_reminders",
+    "hashtags": [
+      "#muslim",
+      "#islamicreminder",
+      "#dua",
+      "#dailyreminder",
+      "#morningdua",
+      "#islamiccontent",
+      "#remembranceofallah",
+      "#dhikr",
+      "#dailydhikr",
+      "#startyourdayright",
+      "#muslimlife",
+      "#blessedday"
+    ]
+  },
+  {
+    "id": 6,
+    "name": "character_building",
+    "hashtags": [
+      "#islam",
+      "#sabr",
+      "#patience",
+      "#islamiccharacter",
+      "#akhlaq",
+      "#muslimmentalhealth",
+      "#gratitudeinislam",
+      "#shukr",
+      "#islamicmanners",
+      "#kindnessinislam",
+      "#mercyofallah",
+      "#selfimprovement"
+    ]
+  },
+  {
+    "id": 7,
+    "name": "friday_special",
+    "hashtags": [
+      "#islam",
+      "#jumuah",
+      "#fridayreminder",
+      "#jumuahmubarak",
+      "#blessedfriday",
+      "#fridayvibes",
+      "#surahkahf",
+      "#fridayprayer",
+      "#jumahreflection",
+      "#sendpeaceandblessings",
+      "#fridayblessings"
+    ]
+  }
+]

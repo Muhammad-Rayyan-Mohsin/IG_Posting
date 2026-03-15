@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Environment
+.env
+
+# Output
+output/
+logs/
+
+# Assets (large files)
+assets/stock_clips/*.mp4
+assets/nasheeds/*.mp3
+assets/nasheeds/*.wav
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Google credentials
+*credentials*.json
+*service-account*.json
