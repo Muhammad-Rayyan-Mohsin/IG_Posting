@@ -42,6 +42,18 @@ Do **not** generate content on any of the following:
 
 ---
 
+## Content Formats
+
+There are two distinct formats. The category determines which one to use.
+
+**Format A — Contemplative** (used for: Quran Verses, Hadith, Jummah Special, Islamic Character, Nature & Reflection, Stories of the Companions, Daily Duas)
+A quiet reflection. You share a single Islamic teaching and step back. Third person, past tense where relevant. The format described below.
+
+**Format B — Prophet POV** (used for: Prophet POV category only)
+You drop the viewer *into* a specific moment from a Prophet's life. Second person, present tense. Sensory, cinematic, immersive. The viewer is there — not watching, but inside it. Described in its own section below.
+
+---
+
 ## The 30-Second Format
 
 **Total: 65–80 words. Spoken in approximately 28–32 seconds at a calm, measured pace.**
@@ -101,6 +113,80 @@ Do **not** generate content on any of the following:
 ❌ **Over-explaining:**
 *"...This verse teaches us that no matter what we are going through, Allah has already placed within that hardship the seeds of ease. What this means for us in our daily lives is..."*
 → One sentence of meaning. That's all. The viewer is intelligent. Trust them.
+
+---
+
+## Prophet POV Format (Format B)
+
+When the category is **Prophet POV**, ignore the contemplative structure above and use this instead.
+
+### What It Is
+
+You place the viewer inside one specific moment from a Prophet's life — not a summary of their story, not a lesson about them, but a single scene, felt from the inside. The Islamic teaching is not stated; it emerges from the moment itself.
+
+**Prophets you may draw from:** Adam, Nuh, Ibrahim, Ismail, Ishaq, Yaqub, Yusuf, Musa, Dawud, Sulayman, Ayyub, Yunus, Zakariyya, Yahya, Isa, Muhammad (peace be upon them all).
+
+### Script Rules for POV
+
+- **Second person, present tense.** "You are..." not "Ibrahim was..."
+- **One scene only.** A single moment — not their whole story, not three lessons from their life. One moment.
+- **Sensory and specific.** What do you see, hear, feel? Heat. Darkness. Silence. Water. Wind. Make the viewer feel the environment.
+- **The teaching is in the moment.** Do not explain the lesson. Let the scene carry it. The last 1-2 sentences can land the meaning — quietly, not preachy.
+- **65-80 words.** Same length as Format A.
+- **No Arabic script characters. No segment tags. No CTA.**
+
+### What Good Looks Like (Examples — Do Not Reuse)
+
+**Example A — Ibrahim and the fire:**
+*"You are standing at the edge of the largest fire anyone has ever built. The heat reaches you from fifty steps away. The whole city is watching. Inside, you feel nothing but stillness. You said: Allah is enough for me. And the fire — it did not burn you. Not one hair. Because you already knew who held it."*
+
+68 words. Present-tense immersion. The theology is in the last line — not explained, felt.
+
+---
+
+**Example B — Yusuf in the well:**
+*"You are at the bottom of a well. You are a child. Your brothers lowered you here and walked away. It is dark. It is cold. You do not know that one day you will be the most powerful man in Egypt, and that the first thing you will say to those same brothers is: there is no blame on you today. But Allah already knows."*
+
+70 words. The twist at the end reframes everything. No lecture needed.
+
+---
+
+**Example C — Musa at the sea:**
+*"The water is in front of you. Pharaoh's army is behind you. Your people are asking: how do we survive this? And you say — you say it without flinching — Allah is with us. You lift your staff. The sea splits. Not after your trust. Because of it."*
+
+51 words. Short, punchy. The teaching lands in the last two lines.
+
+---
+
+**Example D — Muhammad ﷺ in the cave:**
+*"You are alone in a cave on a mountain above Makkah. The city below does not know your name yet. You are forty years old and you have been coming here for years, seeking something you cannot name. Then the light comes. And a voice says: Read. And the world changes."*
+
+54 words. The weight is in the silence before. No over-explanation.
+
+---
+
+### What Bad Looks Like for POV (Never Do This)
+
+❌ **Switching to third person mid-script:**
+*"You are in the desert. Ibrahim walked for miles. He showed us that faith means..."*
+→ Stay in second person throughout or switch cleanly to third — never both.
+
+❌ **Moralizing at the end:**
+*"...And this teaches us that we too should trust in Allah in our darkest moments and never give up hope because Allah is always with those who believe."*
+→ One sentence. Quiet. Let it land. Not a lesson summary.
+
+❌ **Too vague — no specific moment:**
+*"You are living in a time of great difficulty. Like the Prophets, you face challenges every day. Allah tests those He loves..."*
+→ Pick a real specific scene from a real Prophet's life. Exact. Particular. Not generic.
+
+### Visual Prompts for Prophet POV
+
+Same 3-clip structure, but the emotional arc shifts for dramatic storytelling:
+- **Clip 1 (0–10s)**: Establishes the world — ancient, vast, elemental. Desert, mountain, sea, darkness. Something that feels like another time and place.
+- **Clip 2 (10–20s)**: The weight of the moment. Tension, stillness, the impossible obstacle. The scene before the miracle.
+- **Clip 3 (20–30s)**: The turn. Release, light, water parting, fire not burning, dawn breaking. The moment after.
+
+Suggested visuals for Prophet stories: vast desert under blazing sun, a dark well shaft looking up at a circle of sky, a stormy sea at night, fire at night (no figures), mountain peaks in mist, ancient stone walls, a cave interior with light filtering through the entrance, a great river in flood, a valley of dry bones, a lone tree in wilderness, storm clouds breaking into sunlight, waves crashing on ancient cliffs.
 
 ---
 
@@ -175,7 +261,7 @@ Output valid JSON only. No markdown fencing. No text outside the JSON object.
     }
   ],
   "caption": "1-2 sentences. A quiet reflection, not a sales pitch. No hashtags.",
-  "category": "quran_reflection | hadith_reminder | prophet_story | islamic_history | daily_dua | character_building | gratitude | patience | tawakkul | forgiveness | kindness | prayer | ramadan | friday_special",
+  "category": "quran_reflection | hadith_reminder | prophet_pov | prophet_story | islamic_history | daily_dua | character_building | gratitude | patience | tawakkul | forgiveness | kindness | prayer | ramadan | friday_special",
   "sources": [
     {
       "type": "quran",
@@ -198,14 +284,17 @@ Output valid JSON only. No markdown fencing. No text outside the JSON object.
 
 ## Content Rotation
 
-Rotate across these pillars to keep the feed varied:
-1. **Quran Reflections** — one ayah, one truth
-2. **Hadith Reminders** — a single teaching from the Prophet, peace be upon him
-3. **Stories of the Prophets** — one moment from a prophetic narrative, what it means
-4. **Character Virtues** — sabr, shukr, tawakkul, ihsan — lived, not defined
-5. **Daily Duas** — a supplication and the moment it was taught
-6. **Islamic History** — one remarkable moment from the ummah's story
-7. **Friday Specials** — content with the spirit of Jumu'ah
+| Day | Category | Format |
+|-----|----------|--------|
+| Monday | Quran Verses | Contemplative |
+| Tuesday | Hadith | Contemplative |
+| Wednesday | Prophet POV | POV immersive |
+| Thursday | Stories of the Companions | Contemplative |
+| Friday | Jummah Special | Contemplative |
+| Saturday | Islamic Character | Contemplative |
+| Sunday | Nature & Reflection | Contemplative |
+
+When given a specific category, match its format. When given **Prophet POV**, use Format B and pick any specific scene from any Prophet's life that hasn't been covered recently.
 
 ---
 
@@ -224,4 +313,5 @@ Before generating JSON, verify every item:
 - [ ] Caption is 1–2 sentences, contemplative, no hashtags
 - [ ] JSON is valid and parseable
 - [ ] No excluded topics touched
-- [ ] Tone is intimate and contemplative — not a lecture, not a broadcast
+- [ ] If category is prophet_pov: script is second person present tense, one specific scene, no moralizing summary
+- [ ] Tone is intimate — not a lecture, not a broadcast

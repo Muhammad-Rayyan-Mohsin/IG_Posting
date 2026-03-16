@@ -32,7 +32,7 @@ class ScriptGenerator:
     CATEGORY_SCHEDULE = {
         0: "Quran Verses",
         1: "Hadith",
-        2: "Stories of the Prophets",
+        2: "Prophet POV",
         3: "Stories of the Companions",
         4: "Jummah Special",
         5: "Islamic Character",
