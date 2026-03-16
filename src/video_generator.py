@@ -403,8 +403,6 @@ class VideoGenerator:
                 "prompt": prompt,
                 "aspect_ratio": "portrait",
                 "n_frames": n_frames,
-                "size": "high",
-                "remove_watermark": True,
             },
         }
 
