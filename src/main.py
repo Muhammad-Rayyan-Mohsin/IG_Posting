@@ -49,7 +49,6 @@ logger.add(
 # ---------------------------------------------------------------------------
 from script_generator import ScriptGenerator
 from voiceover_generator import VoiceoverGenerator
-from subtitle_generator import SubtitleGenerator
 from video_generator import VideoGenerator
 from video_assembler import VideoAssembler
 from instagram_poster import InstagramPoster
@@ -187,15 +186,10 @@ def run_pipeline():
         logger.info("Voiceover saved: {}", voiceover_path)
 
         # ==============================================================
-        # Step 4: Generate subtitles
+        # Step 4: Subtitles — skipped (short-form ambient storytelling,
+        # no text overlays by design)
         # ==============================================================
-        logger.info("Step 4/7 — Generating subtitles")
-        sub_gen = SubtitleGenerator(model_size="base")
-        subtitle_data = sub_gen.generate_subtitles(
-            audio_path=voiceover_path,
-            output_dir=str(output_dir),
-        )
-        logger.info("Subtitles generated: {}", subtitle_data["srt_path"])
+        logger.info("Step 4/7 — Subtitles skipped (short-form format)")
 
         # ==============================================================
         # Step 5: Generate / fetch video clips
@@ -248,9 +242,10 @@ def run_pipeline():
         final_video = assembler.assemble(
             clips=all_clips,
             voiceover_path=voiceover_path,
-            words=subtitle_data["words"],
+            words=[],
             nasheed_path=nasheed_path,
             output_filename="final_reel.mp4",
+            show_subtitles=False,
         )
         logger.info("Final video assembled: {}", final_video)
 

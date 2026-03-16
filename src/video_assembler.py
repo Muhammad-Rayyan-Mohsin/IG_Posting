@@ -62,8 +62,8 @@ class VideoAssembler:
     SUBTITLE_BG_COLOR = (0, 0, 0)  # semi-transparent background colour (RGB)
     SUBTITLE_BG_OPACITY = 0.5
 
-    # Audio mixing
-    NASHEED_VOLUME_RATIO = 0.20  # nasheed at 20% of voiceover volume
+    # Audio mixing — ambient soundtrack is more prominent in short-form storytelling
+    NASHEED_VOLUME_RATIO = 0.40  # ambient audio at 40% of voiceover volume
 
     # Export settings
     EXPORT_CODEC = "libx264"
@@ -99,6 +99,7 @@ class VideoAssembler:
         words: list[dict],
         nasheed_path: str | None = None,
         output_filename: str = "final.mp4",
+        show_subtitles: bool = False,
     ) -> str:
         """Assemble the final video.
 
@@ -165,9 +166,11 @@ class VideoAssembler:
             # 7. Attach audio to the video
             concatenated = concatenated.with_audio(mixed_audio)
 
-            # 8. Create subtitle overlays
-            subtitle_clips = self._create_subtitle_clips(
-                words, (self.TARGET_WIDTH, self.TARGET_HEIGHT)
+            # 8. Create subtitle overlays (skipped when show_subtitles=False)
+            subtitle_clips = (
+                self._create_subtitle_clips(words, (self.TARGET_WIDTH, self.TARGET_HEIGHT))
+                if show_subtitles and words
+                else []
             )
 
             # 9. Composite subtitles onto the video
