@@ -110,10 +110,14 @@ def _hardcoded_script() -> dict:
 # ── Step 2: Generate voiceover ────────────────────────────────────────────────
 
 def generate_voiceover(script_text: str) -> str:
+    import re
     from voiceover_generator import VoiceoverGenerator
 
+    # Strip any residual [TAG] markers the model may have included
+    clean_text = re.sub(r"\[[^\]]*\]", "", script_text).strip()
+
     gen = VoiceoverGenerator(output_dir=str(OUTPUT_DIR))
-    path = gen.generate(text=script_text, output_path=str(OUTPUT_DIR / "voiceover.mp3"))
+    path = gen.generate(text=clean_text, output_path=str(OUTPUT_DIR / "voiceover.mp3"))
     logger.success("Voiceover: {}", path)
     return path
 

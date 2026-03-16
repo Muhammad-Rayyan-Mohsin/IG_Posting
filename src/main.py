@@ -179,8 +179,12 @@ def run_pipeline():
         # ==============================================================
         logger.info("Step 3/7 — Generating voiceover")
         tts = VoiceoverGenerator(output_dir=str(output_dir))
+        # Strip any residual bracket tags (e.g. [HOOK]) the model may have
+        # slipped through — they would otherwise be spoken aloud by TTS.
+        import re as _re
+        clean_script = _re.sub(r"\[[^\]]*\]", "", script_data["script"]).strip()
         voiceover_path = tts.generate(
-            text=script_data["script"],
+            text=clean_script,
             output_path=str(output_dir / "voiceover.mp3"),
         )
         logger.info("Voiceover saved: {}", voiceover_path)
