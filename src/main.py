@@ -82,7 +82,7 @@ def run_pipeline():
     # Pre-flight: verify critical environment variables
     # ------------------------------------------------------------------
     critical_vars = [
-        "GEMINI_API_KEY",
+        "ANTHROPIC_API_KEY",
         "GOOGLE_SHEETS_CREDENTIALS",
         "GOOGLE_SHEETS_SPREADSHEET_ID",
         "IG_USER_ID",
@@ -105,7 +105,7 @@ def run_pipeline():
         sys.exit(1)
 
     # Optional vars — warn but don't abort
-    optional_vars = ["OPENAI_API_KEY", "PEXELS_API_KEY"]
+    optional_vars = ["KIE_API_KEY", "PEXELS_API_KEY"]
     missing_optional = _check_env_vars(optional_vars)
     if missing_optional:
         logger.warning(
@@ -128,11 +128,28 @@ def run_pipeline():
         )
         logger.info("Content ledger ready")
 
+        # ------------------------------------------------------------------
+        # Deduplication guard: exit cleanly if today was already posted.
+        # This prevents Railway's ON_FAILURE restart policy from double-posting
+        # when a post-publish step (e.g., Sheets update) crashes.
+        # ------------------------------------------------------------------
+        recent = ledger.get_recent_entries(days=1)
+        already_posted = any(
+            r.get("Date") == today and r.get("Status") == "posted"
+            for r in recent
+        )
+        if already_posted:
+            logger.info(
+                "Content for {} was already posted — exiting cleanly (Railway restart guard)",
+                today,
+            )
+            sys.exit(0)
+
         # ==============================================================
         # Step 2: Generate script
         # ==============================================================
         logger.info("Step 2/7 — Generating script")
-        script_gen = ScriptGenerator(api_key=os.environ["GEMINI_API_KEY"])
+        script_gen = ScriptGenerator(api_key=os.environ["ANTHROPIC_API_KEY"])
 
         used_refs = ledger.get_used_references()
         last_hashtag_id = ledger.get_last_hashtag_set_id()
@@ -185,7 +202,7 @@ def run_pipeline():
         # ==============================================================
         logger.info("Step 5/7 — Generating video clips")
         video_gen = VideoGenerator(
-            openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+            kie_api_key=os.environ.get("KIE_API_KEY", ""),
             pexels_api_key=os.environ.get("PEXELS_API_KEY", ""),
             output_dir=str(output_dir),
         )
@@ -258,6 +275,14 @@ def run_pipeline():
         caption = script_data.get("caption", "")
         hashtags = script_data.get("hashtags", [])
         full_caption = f"{caption}\n\n{' '.join(hashtags)}" if hashtags else caption
+
+        # Instagram enforces a 2200-character caption limit.
+        if len(full_caption) > 2200:
+            logger.warning(
+                "Caption length {} exceeds Instagram's 2200-char limit — truncating",
+                len(full_caption),
+            )
+            full_caption = full_caption[:2197] + "..."
 
         result = poster.post_reel(
             video_path=final_video,

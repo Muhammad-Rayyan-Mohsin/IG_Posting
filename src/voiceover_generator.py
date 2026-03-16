@@ -3,12 +3,15 @@ Voiceover Generator Module
 Generates voiceover audio from scripts using Edge-TTS (Microsoft's free neural TTS).
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 from pathlib import Path
 
 import edge_tts
 from loguru import logger
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 # Default voice configuration used when config/voice_config.json is missing
 DEFAULT_VOICE_CONFIG = {
@@ -121,6 +124,16 @@ class VoiceoverGenerator:
         logger.success("Voiceover saved to {}", output_path)
         return str(Path(output_path).resolve())
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=3, max=30),
+        retry=retry_if_exception_type((OSError, ConnectionError, Exception)),
+        before_sleep=lambda rs: logger.warning(
+            "Retrying Edge-TTS generation (attempt {}) after: {}",
+            rs.attempt_number,
+            rs.outcome.exception(),
+        ),
+    )
     def generate(self, text: str, output_path: str, voice: str | None = None) -> str:
         """Synchronous wrapper around the async Edge-TTS generation.
 

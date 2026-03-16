@@ -154,7 +154,7 @@ class SubtitleGenerator:
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
         secs = int(seconds % 60)
-        millis = int(round((seconds - int(seconds)) * 1000))
+        millis = min(int(round((seconds - int(seconds)) * 1000)), 999)
         return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 

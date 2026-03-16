@@ -1,25 +1,32 @@
 """
 Script Generation Module for Automated Islamic Instagram Content Pipeline.
 
-Uses Google Gemini 2.0 Flash (free tier) to generate daily Islamic video scripts
-with a 7-day rotating topic cycle, hashtag rotation, and content deduplication.
+Uses Claude Haiku 4.5 (via Anthropic API) to generate daily Islamic video
+scripts with a 7-day rotating topic cycle, hashtag rotation, and content
+deduplication.
 """
+
+from __future__ import annotations
 
 import json
 import re
 from datetime import datetime
 from pathlib import Path
 
-import google.generativeai as genai
+import requests
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Project paths
 CONFIG_DIR = Path(__file__).parent.parent / "config"
 
+ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION = "2023-06-01"
+MODEL = "claude-haiku-4-5-20251001"
+
 
 class ScriptGenerator:
-    """Generates daily Islamic video scripts using Gemini 2.0 Flash."""
+    """Generates daily Islamic video scripts using Claude Haiku 4.5 via Anthropic API."""
 
     # 7-day topic rotation: Monday=0 ... Sunday=6
     CATEGORY_SCHEDULE = {
@@ -37,12 +44,15 @@ class ScriptGenerator:
         Initialize the script generator.
 
         Args:
-            api_key: Google Gemini API key.
+            api_key: Anthropic API key.
         """
-        # Configure Gemini
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel("gemini-2.0-flash")
-        logger.info("Gemini 2.0 Flash model initialized")
+        self.api_key = api_key
+        self.headers = {
+            "x-api-key": api_key,
+            "anthropic-version": ANTHROPIC_VERSION,
+            "content-type": "application/json",
+        }
+        logger.info("Claude Haiku 4.5 via Anthropic API initialized (model={})", MODEL)
 
         # Load system prompt
         self.system_prompt = self._load_system_prompt()
@@ -151,8 +161,7 @@ class ScriptGenerator:
         if not candidates:
             candidates = self.hashtag_sets
 
-        # Pick the first candidate (deterministic rotation)
-        # To rotate fairly, pick based on day-of-year mod available candidates
+        # Rotate fairly based on day-of-year
         day_of_year = datetime.now().timetuple().tm_yday
         selected = candidates[day_of_year % len(candidates)]
 
@@ -216,24 +225,35 @@ class ScriptGenerator:
         logger.info("Generating script for category: {}", category)
         logger.debug("Exclusion list has {} references", len(used_references))
 
-        # Call Gemini
-        response = self.model.generate_content(
-            contents=user_prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.8,
-                max_output_tokens=4096,
-            ),
-            system_instruction=self.system_prompt,
+        # Call Anthropic Messages API
+        payload = {
+            "model": MODEL,
+            "system": self.system_prompt,
+            "messages": [
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.8,
+            "max_tokens": 4096,
+        }
+
+        response = requests.post(
+            ANTHROPIC_URL,
+            headers=self.headers,
+            json=payload,
+            timeout=60,
         )
+        response.raise_for_status()
 
-        # Validate that we got a response
-        if not response or not response.text:
-            raise ValueError("Gemini returned an empty response")
+        body = response.json()
+        response_text = body["content"][0]["text"]
 
-        logger.debug("Raw response length: {} chars", len(response.text))
+        if not response_text:
+            raise ValueError("Anthropic API returned an empty response")
+
+        logger.debug("Raw response length: {} chars", len(response_text))
 
         # Parse the response
-        parsed = self._parse_response(response.text)
+        parsed = self._parse_response(response_text)
 
         # Attach metadata
         parsed["category"] = category
@@ -251,12 +271,12 @@ class ScriptGenerator:
 
     def _parse_response(self, response_text: str) -> dict:
         """
-        Extract and validate JSON from the Gemini response.
+        Extract and validate JSON from the model response.
 
         Handles responses wrapped in markdown code blocks (```json ... ```).
 
         Args:
-            response_text: Raw text response from Gemini.
+            response_text: Raw text response from the model.
 
         Returns:
             Parsed and validated dict.
@@ -267,7 +287,6 @@ class ScriptGenerator:
         text = response_text.strip()
 
         # Strip markdown code fences if present
-        # Handles ```json ... ``` and ``` ... ```
         code_block_match = re.search(
             r"```(?:json)?\s*\n?(.*?)\n?\s*```",
             text,
@@ -291,11 +310,11 @@ class ScriptGenerator:
                     logger.info("Recovered JSON via regex extraction")
                 except json.JSONDecodeError:
                     raise ValueError(
-                        f"Could not parse JSON from Gemini response: {e}"
+                        f"Could not parse JSON from model response: {e}"
                     ) from e
             else:
                 raise ValueError(
-                    f"No JSON object found in Gemini response: {e}"
+                    f"No JSON object found in model response: {e}"
                 ) from e
 
         if not isinstance(parsed, dict):
@@ -348,14 +367,13 @@ if __name__ == "__main__":
 
     load_dotenv()
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        logger.error("GEMINI_API_KEY not set in environment or .env file")
+        logger.error("ANTHROPIC_API_KEY not set in environment or .env file")
         raise SystemExit(1)
 
     generator = ScriptGenerator(api_key=api_key)
 
-    # Example: pretend we've used these references before
     sample_used = [
         "Surah Al-Fatiha (1:1-7)",
         "Sahih Bukhari 1",

@@ -1,21 +1,23 @@
 """
 Video Generator Module
 ----------------------
-Generates AI video clips via Sora 2 (OpenAI API) and fetches stock footage
+Generates AI video clips via KIE AI (Sora 2 Pro) and fetches stock footage
 from Pexels API for the automated Islamic Instagram content pipeline.
 
 Implements a hybrid approach: 2-3 AI-generated hero clips combined with
 2-3 stock footage filler/atmospheric clips.
 """
 
+from __future__ import annotations
+
 import json
 import random
 import time
+from datetime import datetime
 from pathlib import Path
 
 import requests
 from loguru import logger
-from openai import APIConnectionError, APIError, OpenAI, RateLimitError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -25,25 +27,26 @@ from tenacity import (
 
 
 class VideoGenerator:
-    """Generates video clips using Sora 2 (AI) and Pexels (stock footage)."""
+    """Generates video clips using KIE AI Sora 2 Pro (AI) and Pexels (stock footage)."""
 
     # Target dimensions for Instagram Reels (9:16 portrait)
     TARGET_WIDTH = 1080
     TARGET_HEIGHT = 1920
 
-    # Sora 2 polling configuration
-    POLL_INTERVAL_SECONDS = 10
-    DEFAULT_TIMEOUT_SECONDS = 600  # 10 minutes
+    # KIE API endpoints
+    KIE_CREATE_URL = "https://api.kie.ai/api/v1/jobs/createTask"
+    KIE_POLL_URL = "https://api.kie.ai/api/v1/jobs/recordInfo"
 
-    # Valid Sora 2 durations (seconds) — the API only accepts these values
-    VALID_DURATIONS = [4, 8, 12, 16, 20]
+    # Polling configuration
+    POLL_INTERVAL_SECONDS = 15
+    DEFAULT_TIMEOUT_SECONDS = 2700  # 45 minutes — Sora 2 Pro can take 15-40 min
 
     # Pexels API base URL
     PEXELS_BASE_URL = "https://api.pexels.com/videos/search"
 
     def __init__(
         self,
-        openai_api_key: str,
+        kie_api_key: str,
         pexels_api_key: str,
         output_dir: str = "output",
     ):
@@ -52,22 +55,22 @@ class VideoGenerator:
 
         Parameters
         ----------
-        openai_api_key : str
-            API key for OpenAI (Sora 2 access).
+        kie_api_key : str
+            API key for KIE AI (Sora 2 Pro access).
         pexels_api_key : str
             API key for Pexels video search.
         output_dir : str
             Directory where generated/downloaded clips will be saved.
         """
-        self.client = OpenAI(api_key=openai_api_key)
+        self.kie_api_key = kie_api_key
         self.pexels_api_key = pexels_api_key
 
         self.output_dir = Path(output_dir)
         self.clips_dir = self.output_dir / "clips"
         self.clips_dir.mkdir(parents=True, exist_ok=True)
 
-        if not openai_api_key:
-            logger.warning("OPENAI_API_KEY is empty — Sora 2 AI clip generation will be unavailable")
+        if not kie_api_key:
+            logger.warning("KIE_API_KEY is empty — Sora 2 AI clip generation will be unavailable")
         if not pexels_api_key:
             logger.warning("PEXELS_API_KEY is empty — Pexels stock footage fetching will be unavailable")
 
@@ -110,7 +113,7 @@ class VideoGenerator:
         return {"ai_clips": ai_clips, "stock_clips": stock_clips}
 
     def generate_ai_clips(self, visual_prompts: list[dict]) -> list[str]:
-        """Generate AI video clips via Sora 2 for prompts marked ``type='ai'``.
+        """Generate AI video clips via KIE Sora 2 Pro for prompts marked ``type='ai'``.
 
         Parameters
         ----------
@@ -123,8 +126,8 @@ class VideoGenerator:
         list[str]
             List of local file paths to the downloaded AI-generated clips.
         """
-        if not self.client.api_key:
-            logger.warning("OpenAI API key not set — skipping AI clip generation")
+        if not self.kie_api_key:
+            logger.warning("KIE API key not set — skipping AI clip generation")
             return []
 
         ai_prompts = [p for p in visual_prompts if p.get("type") == "ai"]
@@ -132,59 +135,84 @@ class VideoGenerator:
             logger.warning("No AI prompts found in visual_prompts")
             return []
 
-        logger.info("Processing {} AI video prompts via Sora 2", len(ai_prompts))
+        logger.info("Processing {} AI video prompts via KIE Sora 2 Pro", len(ai_prompts))
 
-        # Phase 1: Submit all jobs
-        jobs = []  # list of (idx, generation_id, output_path)
-        for idx, prompt in enumerate(ai_prompts, start=1):
-            description = prompt.get("description", "")
-            duration = prompt.get("duration", 8)
-            if not description:
-                logger.warning("AI prompt #{} has an empty description, skipping", idx)
-                continue
-            try:
-                generation_id = self._submit_sora_job(description, duration=duration)
-                output_path = str(self.clips_dir / f"ai_clip_{idx:02d}.mp4")
-                jobs.append((idx, generation_id, output_path))
-                logger.info("Sora 2 job {}/{} submitted — id={}", idx, len(ai_prompts), generation_id)
-            except Exception as exc:
-                logger.error("Failed to submit AI clip {}/{}: {}", idx, len(ai_prompts), exc)
-                continue
+        # Phase 1: Submit jobs (or resume from a previous crashed run)
+        persisted = self._load_jobs()
+
+        if persisted:
+            # Restart scenario: task IDs already submitted, skip re-submission
+            jobs = [(j["idx"], j["task_id"], j["output_path"]) for j in persisted]
+            logger.info("Resumed {} KIE jobs — skipping re-submission", len(jobs))
+        else:
+            jobs = []  # list of (idx, task_id, output_path)
+            job_records = []  # for persistence
+            for idx, prompt in enumerate(ai_prompts, start=1):
+                description = prompt.get("description", "")
+                try:
+                    duration = int(prompt.get("duration", 8))
+                except (TypeError, ValueError):
+                    logger.warning("AI prompt #{} has invalid duration '{}', using default 8s", idx, prompt.get("duration"))
+                    duration = 8
+                if not description:
+                    logger.warning("AI prompt #{} has an empty description, skipping", idx)
+                    continue
+                try:
+                    task_id = self._submit_sora_job(description, duration=duration)
+                    output_path = str(self.clips_dir / f"ai_clip_{idx:02d}.mp4")
+                    jobs.append((idx, task_id, output_path))
+                    job_records.append({"idx": idx, "task_id": task_id, "output_path": output_path})
+                    # Persist after each submission so a crash mid-loop still saves what we have
+                    self._save_jobs(job_records)
+                    logger.info("KIE job {}/{} submitted — taskId={}", idx, len(ai_prompts), task_id)
+                except Exception as exc:
+                    logger.error("Failed to submit AI clip {}/{}: {}", idx, len(ai_prompts), exc)
+                    continue
 
         if not jobs:
-            logger.warning("No Sora 2 jobs were submitted successfully")
+            logger.warning("No KIE jobs were submitted successfully")
+            self._clear_jobs()
             return []
 
-        logger.info("All {} jobs submitted — now polling for completion", len(jobs))
+        logger.info("All {} jobs submitted — now polling for completion (timeout={}s)", len(jobs), self.DEFAULT_TIMEOUT_SECONDS)
 
         # Phase 2: Poll all jobs concurrently
         clip_paths = []
-        pending = list(jobs)  # copy
+        pending = list(jobs)
         start_time = time.time()
         timeout = self.DEFAULT_TIMEOUT_SECONDS
 
         while pending and (time.time() - start_time) < timeout:
             still_pending = []
-            for idx, gen_id, output_path in pending:
+            for idx, task_id, output_path in pending:
                 try:
-                    response = self.client.responses.retrieve(gen_id)
-                    status = self._extract_job_status(response)
+                    data = self._poll_task(task_id)
+                    status = data.get("state", "unknown")
 
-                    if status == "completed":
-                        video_url = self._extract_video_url(response)
+                    if status == "success":
+                        video_url = self._extract_video_url(data)
                         if video_url:
                             saved = self._download_video(video_url, output_path)
                             clip_paths.append(saved)
                             logger.success("AI clip {} completed and downloaded: {}", idx, saved)
                         else:
-                            logger.error("AI clip {} completed but no video URL found", idx)
-                    elif status in ("failed", "cancelled", "expired"):
-                        logger.error("AI clip {} ended with status '{}'", idx, status)
+                            logger.error("AI clip {} succeeded but no video URL found in response", idx)
+                    elif status == "fail":
+                        logger.error(
+                            "AI clip {} failed — code={} msg={}",
+                            idx,
+                            data.get("failCode", ""),
+                            data.get("failMsg", ""),
+                        )
                     else:
-                        still_pending.append((idx, gen_id, output_path))
+                        # waiting / queuing / generating
+                        progress = data.get("progress")
+                        if progress is not None:
+                            logger.debug("AI clip {} — status='{}' progress={}%", idx, status, progress)
+                        still_pending.append((idx, task_id, output_path))
                 except Exception as exc:
                     logger.warning("Error polling AI clip {}: {}", idx, exc)
-                    still_pending.append((idx, gen_id, output_path))
+                    still_pending.append((idx, task_id, output_path))
 
             pending = still_pending
             if pending:
@@ -192,8 +220,9 @@ class VideoGenerator:
                 time.sleep(self.POLL_INTERVAL_SECONDS)
 
         if pending:
-            logger.error("{} Sora 2 jobs timed out after {}s", len(pending), timeout)
+            logger.error("{} KIE jobs timed out after {}s", len(pending), timeout)
 
+        self._clear_jobs()
         return clip_paths
 
     def fetch_stock_clips(self, visual_prompts: list[dict]) -> list[str]:
@@ -279,275 +308,180 @@ class VideoGenerator:
             library = [p for p in library if p.get("category") == category] or library
 
         selected = random.sample(library, min(count, len(library)))
-        # Convert library format to visual_prompt format expected by fetch methods
         return [
             {
                 "description": p.get("prompt", ""),
-                "type": "stock",  # fallback always uses stock to avoid Sora costs
+                "type": "stock",  # fallback always uses stock to avoid AI costs
                 "duration": p.get("duration_suggestion", 8),
             }
             for p in selected
         ]
 
     # ------------------------------------------------------------------
-    # Sora 2 internals
+    # Job persistence — survives process restarts
     # ------------------------------------------------------------------
 
-    def _snap_duration(self, requested: int) -> int:
-        """Snap a requested duration to the nearest valid Sora 2 duration."""
-        return min(self.VALID_DURATIONS, key=lambda d: abs(d - requested))
+    @property
+    def _jobs_file(self) -> Path:
+        return self.clips_dir / "kie_jobs.json"
+
+    def _save_jobs(self, jobs: list[dict]) -> None:
+        """Persist submitted KIE task IDs to disk so restarts can resume polling."""
+        payload = {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "jobs": jobs,
+        }
+        self._jobs_file.write_text(json.dumps(payload, indent=2))
+
+    def _load_jobs(self) -> list[dict] | None:
+        """Load persisted jobs if they were submitted today. Returns None if stale/missing."""
+        if not self._jobs_file.exists():
+            return None
+        try:
+            payload = json.loads(self._jobs_file.read_text())
+            if payload.get("date") != datetime.now().strftime("%Y-%m-%d"):
+                logger.info("Stale KIE jobs file ({}), ignoring", payload.get("date"))
+                return None
+            jobs = payload.get("jobs", [])
+            if jobs:
+                logger.info("Resuming {} KIE jobs from previous run", len(jobs))
+            return jobs
+        except Exception as exc:
+            logger.warning("Could not read KIE jobs file: {}", exc)
+            return None
+
+    def _clear_jobs(self) -> None:
+        """Delete the jobs file once all work is complete."""
+        if self._jobs_file.exists():
+            self._jobs_file.unlink()
+
+    # ------------------------------------------------------------------
+    # KIE Sora 2 Pro internals
+    # ------------------------------------------------------------------
+
+    def _duration_to_n_frames(self, duration: int) -> str:
+        """Map a requested duration in seconds to KIE's n_frames parameter.
+
+        KIE accepts only "10" or "15". Clips <= 10s map to "10", longer to "15".
+        """
+        return "15" if duration > 10 else "10"
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=2, min=5, max=60),
-        retry=retry_if_exception_type((APIError, APIConnectionError, RateLimitError, ConnectionError)),
+        retry=retry_if_exception_type((requests.RequestException, ConnectionError)),
         before_sleep=lambda rs: logger.warning(
-            "Retrying Sora 2 submission (attempt {}) after: {}",
+            "Retrying KIE job submission (attempt {}) after: {}",
             rs.attempt_number,
             rs.outcome.exception(),
         ),
     )
     def _submit_sora_job(self, prompt: str, duration: int = 8) -> str:
-        """Submit a Sora 2 video generation job.
-
-        NOTE: The Sora 2 API is accessed via the OpenAI Python SDK. The exact
-        endpoint and response shape may evolve — this method isolates the
-        submission call so it can be updated in one place.
+        """Submit a Sora 2 Pro text-to-video job via KIE AI.
 
         Parameters
         ----------
         prompt : str
             The visual prompt describing the desired video.
         duration : int
-            Desired clip duration in seconds (default 8).
+            Desired clip duration in seconds (used to select n_frames).
 
         Returns
         -------
         str
-            The generation/job ID used for polling.
+            The taskId used for polling.
         """
-        # Snap the requested duration to a valid Sora 2 value (4, 8, 12, 16, or 20).
-        # The official Sora 2 guide recommends shorter clips (4-8s) for higher
-        # quality output; the pipeline stitches clips together as needed.
-        duration = self._snap_duration(duration)
+        n_frames = self._duration_to_n_frames(duration)
 
-        # ----- Sora 2 API call -----
-        # The OpenAI Sora API uses the responses endpoint with a
-        # video_generation tool. Adjust this block if the API surface changes.
-        response = self.client.responses.create(
-            model="sora",
-            input=prompt,
-            tools=[
-                {
-                    "type": "video_generation",
-                    "size": f"{self.TARGET_WIDTH}x{self.TARGET_HEIGHT}",
-                    "duration": duration,
-                }
-            ],
+        headers = {
+            "Authorization": f"Bearer {self.kie_api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": "sora-2-text-to-video",
+            "input": {
+                "prompt": prompt,
+                "aspect_ratio": "portrait",
+                "n_frames": n_frames,
+                "size": "high",
+                "remove_watermark": True,
+            },
+        }
+
+        response = requests.post(
+            self.KIE_CREATE_URL, headers=headers, json=payload, timeout=30
         )
+        response.raise_for_status()
 
-        # Extract the generation ID from the response.
-        # The response contains output items; find the one with video generation
-        # results and pull its ID.
-        generation_id = self._extract_generation_id(response)
-        if not generation_id:
-            raise ValueError(
-                "Sora 2 response did not contain a generation ID. "
-                f"Response: {response}"
+        data = response.json()
+        if data.get("code") != 200:
+            raise RuntimeError(
+                f"KIE API error on submit: code={data.get('code')} msg={data.get('msg')}"
             )
 
-        return generation_id
+        task_id = data.get("data", {}).get("taskId")
+        if not task_id:
+            raise ValueError(f"KIE API did not return a taskId. Response: {data}")
 
-    def _extract_generation_id(self, response) -> str | None:
-        """Extract the generation/job ID from a Sora 2 submission response.
+        return task_id
 
-        This helper exists so that if the OpenAI response shape changes,
-        only this method needs updating.
-
-        Parameters
-        ----------
-        response
-            The response object from ``client.responses.create()``.
-
-        Returns
-        -------
-        str or None
-            The generation ID, or ``None`` if it could not be found.
-        """
-        # Try common response structures:
-
-        # 1) response.id at the top level
-        if hasattr(response, "id") and response.id:
-            return response.id
-
-        # 2) response.output containing items with an id
-        if hasattr(response, "output") and response.output:
-            for item in response.output:
-                if hasattr(item, "id") and item.id:
-                    return item.id
-                # Nested generation_id field
-                if hasattr(item, "generation_id"):
-                    return item.generation_id
-
-        # 3) dict-style access (if the SDK returns raw dicts)
-        if isinstance(response, dict):
-            if "id" in response:
-                return response["id"]
-            for item in response.get("output", []):
-                if "id" in item:
-                    return item["id"]
-
-        return None
-
-    def _poll_sora_job(
-        self,
-        generation_id: str,
-        timeout: int | None = None,
-    ) -> str:
-        """Poll a Sora 2 generation job until completion.
+    def _poll_task(self, task_id: str) -> dict:
+        """Fetch the current state of a KIE task.
 
         Parameters
         ----------
-        generation_id : str
-            The job/generation ID returned by ``_submit_sora_job``.
-        timeout : int, optional
-            Maximum seconds to wait before raising a ``TimeoutError``.
-            Defaults to ``DEFAULT_TIMEOUT_SECONDS`` (600 s / 10 min).
+        task_id : str
+            The taskId returned by ``_submit_sora_job``.
 
         Returns
         -------
-        str
-            The URL of the generated video.
-
-        Raises
-        ------
-        TimeoutError
-            If the job does not complete within the timeout window.
-        RuntimeError
-            If the job fails or is cancelled.
+        dict
+            The ``data`` object from the KIE response (contains state, resultJson, etc.).
         """
-        timeout = timeout or self.DEFAULT_TIMEOUT_SECONDS
-        start_time = time.time()
-
-        logger.info(
-            "Polling Sora 2 job {} (timeout={}s, interval={}s)",
-            generation_id,
-            timeout,
-            self.POLL_INTERVAL_SECONDS,
+        headers = {"Authorization": f"Bearer {self.kie_api_key}"}
+        response = requests.get(
+            self.KIE_POLL_URL,
+            headers=headers,
+            params={"taskId": task_id},
+            timeout=30,
         )
+        response.raise_for_status()
 
-        while True:
-            elapsed = time.time() - start_time
-            if elapsed > timeout:
-                raise TimeoutError(
-                    f"Sora 2 job {generation_id} did not complete within "
-                    f"{timeout} seconds"
-                )
-
-            # ----- Poll the job status -----
-            # Adjust this call if the OpenAI SDK polling API changes.
-            try:
-                response = self.client.responses.retrieve(generation_id)
-            except Exception as exc:
-                logger.warning(
-                    "Error polling Sora 2 job {} (elapsed {:.0f}s): {}",
-                    generation_id,
-                    elapsed,
-                    exc,
-                )
-                time.sleep(self.POLL_INTERVAL_SECONDS)
-                continue
-
-            # Determine status from the response
-            status = self._extract_job_status(response)
-
-            if status == "completed":
-                video_url = self._extract_video_url(response)
-                if video_url:
-                    logger.info(
-                        "Sora 2 job {} completed after {:.0f}s",
-                        generation_id,
-                        elapsed,
-                    )
-                    return video_url
-                raise RuntimeError(
-                    f"Sora 2 job {generation_id} completed but no video URL found"
-                )
-
-            if status in ("failed", "cancelled", "expired"):
-                raise RuntimeError(
-                    f"Sora 2 job {generation_id} ended with status '{status}'"
-                )
-
-            logger.debug(
-                "Sora 2 job {} — status='{}', elapsed={:.0f}s",
-                generation_id,
-                status,
-                elapsed,
+        body = response.json()
+        if body.get("code") != 200:
+            raise RuntimeError(
+                f"KIE poll error: code={body.get('code')} msg={body.get('msg')}"
             )
-            time.sleep(self.POLL_INTERVAL_SECONDS)
 
-    def _extract_job_status(self, response) -> str:
-        """Extract the status string from a Sora 2 poll response.
+        return body.get("data", {})
 
-        Parameters
-        ----------
-        response
-            The response from ``client.responses.retrieve()``.
+    def _extract_video_url(self, task_data: dict) -> str | None:
+        """Extract the video download URL from a completed KIE task record.
 
-        Returns
-        -------
-        str
-            One of ``"completed"``, ``"in_progress"``, ``"failed"``,
-            ``"cancelled"``, ``"expired"``, or ``"unknown"``.
-        """
-        # Object attribute access
-        if hasattr(response, "status"):
-            return str(response.status).lower()
-
-        # Dict access
-        if isinstance(response, dict) and "status" in response:
-            return str(response["status"]).lower()
-
-        return "unknown"
-
-    def _extract_video_url(self, response) -> str | None:
-        """Extract the video download URL from a completed Sora 2 response.
+        The video URL lives inside ``resultJson``, which is a JSON-encoded string
+        containing ``{"resultUrls": ["https://...mp4"]}``.
 
         Parameters
         ----------
-        response
-            The completed response object.
+        task_data : dict
+            The ``data`` object from a KIE poll response.
 
         Returns
         -------
         str or None
             The video URL, or ``None`` if it could not be found.
         """
-        # Try output items first
-        if hasattr(response, "output") and response.output:
-            for item in response.output:
-                # Direct url attribute
-                if hasattr(item, "url") and item.url:
-                    return item.url
-                # Nested video/result with url
-                if hasattr(item, "video") and hasattr(item.video, "url"):
-                    return item.video.url
-                if hasattr(item, "result") and hasattr(item.result, "url"):
-                    return item.result.url
-                # content list pattern
-                if hasattr(item, "content") and item.content:
-                    for content_item in item.content:
-                        if hasattr(content_item, "url") and content_item.url:
-                            return content_item.url
+        result_json_str = task_data.get("resultJson")
+        if not result_json_str:
+            return None
 
-        # Dict fallback
-        if isinstance(response, dict):
-            for item in response.get("output", []):
-                if "url" in item:
-                    return item["url"]
-
-        return None
+        try:
+            result = json.loads(result_json_str)
+            urls = result.get("resultUrls", [])
+            return urls[0] if urls else None
+        except (json.JSONDecodeError, IndexError, TypeError) as exc:
+            logger.warning("Could not parse resultJson: {} — raw: {}", exc, result_json_str)
+            return None
 
     # ------------------------------------------------------------------
     # Pexels internals
@@ -566,22 +500,7 @@ class VideoGenerator:
     def _search_pexels(
         self, query: str, orientation: str = "portrait"
     ) -> dict | None:
-        """Search the Pexels API for videos matching a query.
-
-        Parameters
-        ----------
-        query : str
-            Search keywords (e.g. ``"sunset over mosque"``).
-        orientation : str
-            Video orientation — ``"portrait"``, ``"landscape"``, or
-            ``"square"``. Defaults to ``"portrait"`` for Instagram Reels.
-
-        Returns
-        -------
-        dict or None
-            The best-matching video object from Pexels, or ``None`` if no
-            results were found.
-        """
+        """Search the Pexels API for videos matching a query."""
         headers = {"Authorization": self.pexels_api_key}
         params = {
             "query": query,
@@ -605,32 +524,17 @@ class VideoGenerator:
         logger.info(
             "Pexels returned {} results for '{}'", len(videos), query[:80]
         )
-
-        # Return the first (most relevant) result
         return videos[0]
 
     def _select_best_pexels_file(self, video_result: dict) -> str | None:
         """Select the best video file URL from a Pexels video result.
 
-        Prefers files closest to 1080x1920 portrait dimensions. Falls back
-        to the highest-resolution available file.
-
-        Parameters
-        ----------
-        video_result : dict
-            A single video object from the Pexels API response.
-
-        Returns
-        -------
-        str or None
-            The download URL for the chosen video file, or ``None`` if no
-            video files are present.
+        Prefers files closest to 1080x1920 portrait dimensions.
         """
         video_files = video_result.get("video_files", [])
         if not video_files:
             return None
 
-        # Score each file by how close its dimensions are to our target
         def dimension_score(vf: dict) -> float:
             w = vf.get("width", 0)
             h = vf.get("height", 0)
@@ -638,7 +542,6 @@ class VideoGenerator:
                 return float("inf")
             return abs(w - self.TARGET_WIDTH) + abs(h - self.TARGET_HEIGHT)
 
-        # Sort by closeness to target, then by resolution (higher is better)
         video_files_sorted = sorted(video_files, key=dimension_score)
         best = video_files_sorted[0]
 
@@ -648,7 +551,6 @@ class VideoGenerator:
             best.get("height"),
             best.get("quality"),
         )
-
         return best.get("link")
 
     # ------------------------------------------------------------------
@@ -666,22 +568,7 @@ class VideoGenerator:
         ),
     )
     def _download_video(self, url: str, output_path: str) -> str:
-        """Download a video file from a URL to a local path.
-
-        Uses streaming to handle large files efficiently.
-
-        Parameters
-        ----------
-        url : str
-            The video download URL.
-        output_path : str
-            Local destination path for the downloaded file.
-
-        Returns
-        -------
-        str
-            The absolute path to the saved file.
-        """
+        """Download a video file from a URL to a local path."""
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -702,7 +589,6 @@ class VideoGenerator:
             total_bytes / (1024 * 1024),
             output_path,
         )
-
         return str(output.resolve())
 
 
@@ -717,23 +603,22 @@ if __name__ == "__main__":
 
     load_dotenv()
 
-    openai_key = os.getenv("OPENAI_API_KEY")
+    kie_key = os.getenv("KIE_API_KEY")
     pexels_key = os.getenv("PEXELS_API_KEY")
 
-    if not openai_key:
-        logger.error("OPENAI_API_KEY not set in environment or .env file")
+    if not kie_key:
+        logger.error("KIE_API_KEY not set in environment or .env file")
         raise SystemExit(1)
     if not pexels_key:
         logger.error("PEXELS_API_KEY not set in environment or .env file")
         raise SystemExit(1)
 
     generator = VideoGenerator(
-        openai_api_key=openai_key,
+        kie_api_key=kie_key,
         pexels_api_key=pexels_key,
         output_dir="output",
     )
 
-    # Sample visual prompts (as the script generator would produce)
     sample_prompts = [
         {
             "type": "ai",

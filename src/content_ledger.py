@@ -73,17 +73,22 @@ class ContentLedger:
             else:
                 logger.info("Authenticating with inline service account JSON")
                 key_data = json.loads(credentials_json)
-                # gspread needs a file path, so write to a temp file
+                # gspread needs a file path, so write to a temp file.
+                # Use try/finally to guarantee the file is removed even if
+                # from_json_keyfile_name raises (prevents private key leakage).
                 tmp = tempfile.NamedTemporaryFile(
                     mode="w", suffix=".json", delete=False
                 )
-                json.dump(key_data, tmp)
-                tmp.flush()
-                tmp.close()
-                creds = ServiceAccountCredentials.from_json_keyfile_name(
-                    tmp.name, SCOPES
-                )
-                os.unlink(tmp.name)
+                try:
+                    json.dump(key_data, tmp)
+                    tmp.flush()
+                    tmp.close()
+                    creds = ServiceAccountCredentials.from_json_keyfile_name(
+                        tmp.name, SCOPES
+                    )
+                finally:
+                    if os.path.exists(tmp.name):
+                        os.unlink(tmp.name)
 
             self.gc = gspread.authorize(creds)
             logger.info("Google Sheets authentication successful")
@@ -300,8 +305,11 @@ class ContentLedger:
 
         self.worksheet.append_row(new_row, value_input_option="USER_ENTERED")
 
-        # Determine the row number (header + existing data rows + 1)
-        row_number = len(self.worksheet.get_all_values())
+        # Locate the appended row by its unique Created At timestamp (column 11).
+        # This avoids a race condition where len(get_all_values()) returns a stale
+        # count if another process appended a row between our append and the count.
+        cell = self.worksheet.find(created_at, in_column=11)
+        row_number = cell.row if cell else len(self.worksheet.get_all_values())
         logger.info(
             "Logged new entry at row {} — title='{}', status='generated'",
             row_number,

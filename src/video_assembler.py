@@ -7,6 +7,8 @@ voiceover audio, word-level subtitles, and optional background nasheed.
 Uses MoviePy 2.x and FFmpeg for all video/audio processing.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import numpy as np
@@ -16,8 +18,10 @@ from moviepy import (
     AudioFileClip,
     CompositeAudioClip,
     CompositeVideoClip,
+    ImageClip,
     TextClip,
     VideoFileClip,
+    concatenate_audioclips,
     concatenate_videoclips,
 )
 
@@ -416,8 +420,6 @@ class VideoAssembler:
         # Loop or trim nasheed to match voiceover duration
         if nasheed.duration < voiceover.duration:
             loops = int(voiceover.duration / nasheed.duration) + 1
-            from moviepy import concatenate_audioclips
-
             nasheed = concatenate_audioclips([nasheed] * loops)
 
         nasheed = nasheed.subclipped(0, voiceover.duration)
@@ -541,8 +543,6 @@ class VideoAssembler:
         VideoClip
             A semi-transparent background clip positioned behind the subtitle.
         """
-        from moviepy import ImageClip
-
         bg_width = self.SUBTITLE_MAX_WIDTH + 40  # padding
         bg_height = 80  # enough for ~2 lines of text
 
@@ -640,20 +640,20 @@ class VideoAssembler:
                 logger.info("Using Amiri font: {}", font_path)
                 return str(font_path)
 
-        # Fall back to system fonts
+        # Fall back to system fonts — only return a path if it actually exists
         system_fonts = [
-            "/System/Library/Fonts/Supplemental/Arial.ttf",        # macOS
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",     # Linux
-            "C:/Windows/Fonts/arial.ttf",                           # Windows
-            "Arial",                                                 # Generic name
+            "/System/Library/Fonts/Supplemental/Arial.ttf",            # macOS
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",         # Linux (Dockerfile: fonts-freefont-ttf)
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",         # Linux (fonts-dejavu)
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",  # Linux (fonts-liberation)
+            "C:/Windows/Fonts/arial.ttf",                               # Windows
         ]
         for font in system_fonts:
-            font_p = Path(font)
-            if font_p.exists() or not font.startswith("/"):
+            if Path(font).exists():
                 logger.info("Using system font: {}", font)
                 return font
 
-        logger.warning("No preferred font found — using default 'Arial'")
+        logger.warning("No preferred font found — using generic 'Arial' name")
         return "Arial"
 
     # ------------------------------------------------------------------
