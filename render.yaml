@@ -1,0 +1,35 @@
+services:
+  - type: cron
+    name: ig-posting-pipeline
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    schedule: "0 6 * * 1,4"  # Monday & Thursday at 6am UTC
+    region: oregon
+    plan: starter
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: KIE_API_KEY
+        sync: false
+      - key: PEXELS_API_KEY
+        sync: false
+      - key: GOOGLE_SHEETS_CREDENTIALS
+        sync: false
+      - key: GOOGLE_SHEETS_SPREADSHEET_ID
+        sync: false
+      - key: IG_USER_ID
+        sync: false
+      - key: IG_ACCESS_TOKEN
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY
+        sync: false
+      - key: R2_SECRET_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
+      - key: FAILURE_WEBHOOK_URL
+        sync: false
