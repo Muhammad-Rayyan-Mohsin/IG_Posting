@@ -64,6 +64,7 @@ class VideoAssembler:
 
     # Audio mixing
     NASHEED_VOLUME_RATIO = 0.20  # nasheed at 20% of voiceover volume
+    SORA_AMBIENT_VOLUME_RATIO = 0.15  # Sora 2 ambient audio at 15% (boosted to 20% if no nasheed)
 
     # Export settings
     EXPORT_CODEC = "libx264"
@@ -99,6 +100,7 @@ class VideoAssembler:
         words: list[dict],
         nasheed_path: str | None = None,
         output_filename: str = "final.mp4",
+        ai_clip_paths: list[str] | None = None,
     ) -> str:
         """Assemble the final video.
 
@@ -117,6 +119,9 @@ class VideoAssembler:
             file does not exist, only the voiceover will be used.
         output_filename : str
             Name for the final output file (default ``"final.mp4"``).
+        ai_clip_paths : list[str] or None
+            Optional list of AI-generated (Sora 2) clip paths. Their ambient
+            audio will be extracted and mixed in at low volume.
 
         Returns
         -------
@@ -124,11 +129,12 @@ class VideoAssembler:
             Absolute path to the assembled final MP4.
         """
         logger.info(
-            "Starting assembly — {} clips, voiceover={}, words={}, nasheed={}",
+            "Starting assembly — {} clips, voiceover={}, words={}, nasheed={}, ai_clips={}",
             len(clips),
             voiceover_path,
             len(words),
             nasheed_path or "none",
+            len(ai_clip_paths) if ai_clip_paths else 0,
         )
 
         # Track all clips for cleanup in finally block
@@ -159,18 +165,23 @@ class VideoAssembler:
             concatenated = self._match_duration(concatenated, target_duration)
             logger.info("Duration after matching: {:.1f}s", concatenated.duration)
 
-            # 6. Mix audio (voiceover + optional nasheed)
-            mixed_audio = self._mix_audio(voiceover, nasheed_path)
+            # 6. Extract Sora 2 ambient audio from AI clips (if provided)
+            ambient_path: str | None = None
+            if ai_clip_paths:
+                ambient_path = self._extract_clips_audio(ai_clip_paths)
 
-            # 7. Attach audio to the video
+            # 7. Mix audio (voiceover + optional Sora 2 ambient + optional nasheed)
+            mixed_audio = self._mix_audio(voiceover, nasheed_path, ambient_path=ambient_path)
+
+            # 8. Attach audio to the video
             concatenated = concatenated.with_audio(mixed_audio)
 
-            # 8. Create subtitle overlays
+            # 9. Create subtitle overlays
             subtitle_clips = self._create_subtitle_clips(
                 words, (self.TARGET_WIDTH, self.TARGET_HEIGHT)
             )
 
-            # 9. Composite subtitles onto the video
+            # 10. Composite subtitles onto the video
             if subtitle_clips:
                 final = CompositeVideoClip([concatenated] + subtitle_clips)
                 logger.info("Added {} subtitle overlays", len(subtitle_clips))
@@ -178,7 +189,7 @@ class VideoAssembler:
                 final = concatenated
                 logger.info("No subtitles to overlay")
 
-            # 10. Export
+            # 11. Export
             output_path = str(self.output_dir / output_filename)
             logger.info("Exporting final video to {}", output_path)
 
@@ -384,10 +395,70 @@ class VideoAssembler:
     # Audio mixing
     # ------------------------------------------------------------------
 
+    def _extract_clips_audio(self, clip_paths: list[str]) -> str | None:
+        """Extract and concatenate ambient audio tracks from AI-generated clips.
+
+        Parameters
+        ----------
+        clip_paths : list[str]
+            Paths to the AI-generated video clip files.
+
+        Returns
+        -------
+        str or None
+            Path to the concatenated ambient MP3, or ``None`` if no clips
+            had audio tracks.
+        """
+        audio_tracks = []
+        clips_to_close = []
+
+        try:
+            for path in clip_paths:
+                p = Path(path)
+                if not p.exists():
+                    logger.debug("AI clip not found for audio extraction, skipping: {}", path)
+                    continue
+                try:
+                    clip = VideoFileClip(str(p))
+                    clips_to_close.append(clip)
+                    if clip.audio is not None:
+                        audio_tracks.append(clip.audio)
+                        logger.debug("Extracted audio from AI clip: {}", p.name)
+                    else:
+                        logger.debug("AI clip has no audio track: {}", p.name)
+                except Exception as exc:
+                    logger.warning("Could not open AI clip for audio extraction {}: {}", path, exc)
+                    continue
+
+            if not audio_tracks:
+                logger.info("No audio tracks found in AI clips — skipping Sora 2 ambient audio")
+                return None
+
+            logger.info("Concatenating {} audio tracks from AI clips", len(audio_tracks))
+            combined = concatenate_audioclips(audio_tracks)
+            ambient_path = str(self.output_dir / "sora_ambient.mp3")
+            combined.write_audiofile(ambient_path, logger=None)
+            logger.info("Sora 2 ambient audio saved: {}", ambient_path)
+            return ambient_path
+
+        finally:
+            for clip in clips_to_close:
+                try:
+                    clip.close()
+                except Exception:
+                    pass
+
     def _mix_audio(
-        self, voiceover: 'AudioFileClip', nasheed_path: str | None = None
+        self,
+        voiceover: 'AudioFileClip',
+        nasheed_path: str | None = None,
+        ambient_path: str | None = None,
     ):
-        """Mix voiceover with optional background nasheed.
+        """Mix voiceover with optional Sora 2 ambient audio and/or background nasheed.
+
+        Mix order (all relative to voiceover at 100%):
+        - Sora 2 ambient audio: 15% volume (20% if no nasheed present)
+        - Nasheed: 20% volume
 
         Parameters
         ----------
@@ -395,43 +466,56 @@ class VideoAssembler:
             The already-loaded voiceover audio clip.
         nasheed_path : str or None
             Path to the background nasheed audio. If ``None`` or the file
-            does not exist, only the voiceover is returned.
+            does not exist, it is skipped.
+        ambient_path : str or None
+            Path to the extracted Sora 2 ambient audio. If ``None`` or the
+            file does not exist, it is skipped.
 
         Returns
         -------
         AudioClip
             The mixed audio clip.
         """
+        tracks = [voiceover]
 
-        if not nasheed_path or not Path(nasheed_path).exists():
-            if nasheed_path:
-                logger.warning(
-                    "Nasheed file not found at '{}', using voiceover only",
-                    nasheed_path,
-                )
-            else:
-                logger.info("No nasheed provided, using voiceover only")
+        # --- Sora 2 ambient audio ---
+        has_nasheed = bool(nasheed_path and Path(nasheed_path).exists())
+        ambient_volume = self.SORA_AMBIENT_VOLUME_RATIO if has_nasheed else 0.20
+
+        if ambient_path and Path(ambient_path).exists():
+            logger.info("Mixing in Sora 2 ambient audio: {} at {:.0%} volume", ambient_path, ambient_volume)
+            ambient = AudioFileClip(ambient_path)
+            if ambient.duration < voiceover.duration:
+                loops = int(voiceover.duration / ambient.duration) + 1
+                ambient = concatenate_audioclips([ambient] * loops)
+            ambient = ambient.subclipped(0, voiceover.duration)
+            ambient = ambient.with_volume_scaled(ambient_volume)
+            tracks.append(ambient)
+        elif ambient_path:
+            logger.warning("Sora 2 ambient audio file not found at '{}', skipping", ambient_path)
+
+        # --- Nasheed ---
+        if has_nasheed:
+            logger.info("Mixing voiceover with nasheed: {}", nasheed_path)
+            nasheed = AudioFileClip(nasheed_path)
+            if nasheed.duration < voiceover.duration:
+                loops = int(voiceover.duration / nasheed.duration) + 1
+                nasheed = concatenate_audioclips([nasheed] * loops)
+            nasheed = nasheed.subclipped(0, voiceover.duration)
+            nasheed = nasheed.with_volume_scaled(self.NASHEED_VOLUME_RATIO)
+            tracks.append(nasheed)
+        elif nasheed_path:
+            logger.warning("Nasheed file not found at '{}', skipping", nasheed_path)
+
+        if len(tracks) == 1:
+            logger.info("No background audio — using voiceover only")
             return voiceover
 
-        logger.info("Mixing voiceover with nasheed: {}", nasheed_path)
-
-        nasheed = AudioFileClip(nasheed_path)
-
-        # Loop or trim nasheed to match voiceover duration
-        if nasheed.duration < voiceover.duration:
-            loops = int(voiceover.duration / nasheed.duration) + 1
-            nasheed = concatenate_audioclips([nasheed] * loops)
-
-        nasheed = nasheed.subclipped(0, voiceover.duration)
-
-        # Reduce nasheed volume to NASHEED_VOLUME_RATIO of voiceover
-        nasheed = nasheed.with_volume_scaled(self.NASHEED_VOLUME_RATIO)
-
-        mixed = CompositeAudioClip([voiceover, nasheed])
+        mixed = CompositeAudioClip(tracks)
         logger.info(
-            "Audio mixed — voiceover {:.1f}s + nasheed at {:.0%} volume",
+            "Audio mixed — voiceover {:.1f}s + {} background track(s)",
             voiceover.duration,
-            self.NASHEED_VOLUME_RATIO,
+            len(tracks) - 1,
         )
         return mixed
 

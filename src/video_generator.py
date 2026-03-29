@@ -38,8 +38,8 @@ class VideoGenerator:
     KIE_POLL_URL = "https://api.kie.ai/api/v1/jobs/recordInfo"
 
     # Polling configuration
-    POLL_INTERVAL_SECONDS = 15
-    DEFAULT_TIMEOUT_SECONDS = 2700  # 45 minutes — Sora 2 Pro can take 15-40 min
+    POLL_INTERVAL_SECONDS = 20
+    DEFAULT_TIMEOUT_SECONDS = 5400  # 90 minutes — Sora 2 Pro can take up to 60+ min
 
     # Pexels API base URL
     PEXELS_BASE_URL = "https://api.pexels.com/videos/search"
@@ -158,13 +158,37 @@ class VideoGenerator:
                     logger.warning("AI prompt #{} has an empty description, skipping", idx)
                     continue
                 try:
-                    task_id = self._submit_sora_job(description, duration=duration)
+                    task_id, full_response = self._submit_sora_job(description, duration=duration)
+                    logger.info(
+                        "KIE job {}/{} submitted — taskId={} | full response: {}",
+                        idx, len(ai_prompts), task_id, full_response,
+                    )
+                    # Validate: do one immediate poll to confirm the job was accepted
+                    try:
+                        validation_data = self._poll_task(task_id)
+                        validation_status = validation_data.get("state", "unknown")
+                        if validation_status == "fail":
+                            logger.error(
+                                "KIE job {}/{} was immediately rejected — taskId={} | validation data: {}",
+                                idx, len(ai_prompts), task_id, validation_data,
+                            )
+                            continue
+                        logger.info(
+                            "KIE job {}/{} validation OK — status='{}' taskId={}",
+                            idx, len(ai_prompts), validation_status, task_id,
+                        )
+                    except Exception as val_exc:
+                        logger.warning(
+                            "Could not validate KIE job {}/{} (taskId={}): {} — proceeding anyway",
+                            idx, len(ai_prompts), task_id, val_exc,
+                        )
                     output_path = str(self.clips_dir / f"ai_clip_{idx:02d}.mp4")
                     jobs.append((idx, task_id, output_path))
                     job_records.append({"idx": idx, "task_id": task_id, "output_path": output_path})
                     # Persist after each submission so a crash mid-loop still saves what we have
                     self._save_jobs(job_records)
-                    logger.info("KIE job {}/{} submitted — taskId={}", idx, len(ai_prompts), task_id)
+                    if idx < len(ai_prompts):
+                        time.sleep(2)  # small delay between submissions to avoid rate limiting
                 except Exception as exc:
                     logger.error("Failed to submit AI clip {}/{}: {}", idx, len(ai_prompts), exc)
                     continue
@@ -199,16 +223,17 @@ class VideoGenerator:
                             logger.error("AI clip {} succeeded but no video URL found in response", idx)
                     elif status == "fail":
                         logger.error(
-                            "AI clip {} failed — code={} msg={}",
+                            "AI clip {} failed — full task data: {}",
                             idx,
-                            data.get("failCode", ""),
-                            data.get("failMsg", ""),
+                            data,
                         )
                     else:
                         # waiting / queuing / generating
                         progress = data.get("progress")
                         if progress is not None:
-                            logger.debug("AI clip {} — status='{}' progress={}%", idx, status, progress)
+                            logger.info("AI clip {} — status='{}' progress={}%", idx, status, progress)
+                        else:
+                            logger.info("AI clip {} — status='{}'", idx, status)
                         still_pending.append((idx, task_id, output_path))
                 except Exception as exc:
                     logger.warning("Error polling AI clip {}: {}", idx, exc)
@@ -216,7 +241,7 @@ class VideoGenerator:
 
             pending = still_pending
             if pending:
-                logger.debug("{} jobs still pending, waiting {}s...", len(pending), self.POLL_INTERVAL_SECONDS)
+                logger.info("{} jobs still pending, waiting {}s...", len(pending), self.POLL_INTERVAL_SECONDS)
                 time.sleep(self.POLL_INTERVAL_SECONDS)
 
         if pending:
@@ -376,7 +401,7 @@ class VideoGenerator:
             rs.outcome.exception(),
         ),
     )
-    def _submit_sora_job(self, prompt: str, duration: int = 8) -> str:
+    def _submit_sora_job(self, prompt: str, duration: int = 8) -> tuple[str, dict]:
         """Submit a Sora 2 Pro text-to-video job via KIE AI.
 
         Parameters
@@ -388,8 +413,8 @@ class VideoGenerator:
 
         Returns
         -------
-        str
-            The taskId used for polling.
+        tuple[str, dict]
+            A tuple of (taskId, full_response_data) for logging and validation.
         """
         n_frames = self._duration_to_n_frames(duration)
 
@@ -415,15 +440,19 @@ class VideoGenerator:
 
         data = response.json()
         if data.get("code") != 200:
+            logger.error(
+                "KIE API unexpected response on submit — full body: {}", data
+            )
             raise RuntimeError(
                 f"KIE API error on submit: code={data.get('code')} msg={data.get('msg')}"
             )
 
         task_id = data.get("data", {}).get("taskId")
         if not task_id:
+            logger.error("KIE API returned no taskId — full body: {}", data)
             raise ValueError(f"KIE API did not return a taskId. Response: {data}")
 
-        return task_id
+        return task_id, data
 
     def _poll_task(self, task_id: str) -> dict:
         """Fetch the current state of a KIE task.

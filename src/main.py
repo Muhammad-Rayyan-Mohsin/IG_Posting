@@ -251,6 +251,7 @@ def run_pipeline():
             words=subtitle_data["words"],
             nasheed_path=nasheed_path,
             output_filename="final_reel.mp4",
+            ai_clip_paths=clips_data.get("ai_clips", []),
         )
         logger.info("Final video assembled: {}", final_video)
 
