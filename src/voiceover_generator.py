@@ -125,8 +125,8 @@ class VoiceoverGenerator:
         return str(Path(output_path).resolve())
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=3, max=30),
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=3, min=5, max=60),
         retry=retry_if_exception_type((OSError, ConnectionError, Exception)),
         before_sleep=lambda rs: logger.warning(
             "Retrying Edge-TTS generation (attempt {}) after: {}",
