@@ -1,37 +1,34 @@
 """
 Subtitle Generator Module
-Generates word-level subtitle timestamps from voiceover audio using faster-whisper.
+Generates word-level subtitle timestamps from the voiceover script text.
+
+Uses a simple word-per-second estimation approach based on the voiceover
+audio duration and the script text. No heavy ML models required.
 """
 
 import json
 from pathlib import Path
 
-from faster_whisper import WhisperModel
 from loguru import logger
+from moviepy import AudioFileClip
 
 
 class SubtitleGenerator:
-    """Transcribes audio and produces SRT subtitles with word-level timing."""
+    """Produces SRT subtitles with word-level timing from script text and audio duration."""
 
-    def __init__(self, model_size: str = "base"):
-        """Initialise the subtitle generator.
+    # Average speaking rate in words per second for the Edge-TTS voices used.
+    # English Guy Neural at -5% rate ≈ 2.5 wps; Arabic Hamed at -10% ≈ 2.0 wps.
+    DEFAULT_WPS = 2.4
 
-        Args:
-            model_size: Whisper model size — one of "tiny", "base", "small", "medium".
-                        Default is "base" for a good balance of speed and accuracy.
-        """
-        logger.info("Loading faster-whisper model (size={})", model_size)
-        self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
-        logger.success("Whisper model loaded successfully")
+    def generate_subtitles(self, script_text: str, audio_path: str, output_dir: str = "output") -> dict:
+        """Generate subtitles from the script text and audio duration.
 
-    def generate_subtitles(self, audio_path: str, output_dir: str = "output") -> dict:
-        """Generate subtitles from an audio file.
-
-        Transcribes the audio, extracts word-level timestamps, and writes an
-        SRT file alongside a JSON file with structured word timing data.
+        Distributes word timings evenly across the audio duration based
+        on the word count, producing SRT and JSON timing files.
 
         Args:
-            audio_path: Path to the input audio file (e.g. MP3).
+            script_text: The full narration script text.
+            audio_path: Path to the voiceover audio file (used to get duration).
             output_dir: Directory to write the SRT and JSON output files.
 
         Returns:
@@ -51,10 +48,39 @@ class SubtitleGenerator:
         srt_path = out_dir / f"{stem}.srt"
         json_path = out_dir / f"{stem}_words.json"
 
-        logger.info("Transcribing audio: {}", audio_path)
-        words = self._transcribe(str(audio_path))
-        logger.info("Transcription complete — {} words extracted", len(words))
+        # Get audio duration
+        audio = AudioFileClip(str(audio_path))
+        duration = audio.duration
+        audio.close()
+        logger.info("Audio duration: {:.1f}s", duration)
 
+        # Clean script text — remove segment tags like [HOOK], [pause], etc.
+        import re
+        clean_text = re.sub(r'\[(?:HOOK|CONTEXT|CORE|REFLECTION|CTA|OUTRO|pause)\]', '', script_text)
+        raw_words = clean_text.split()
+        # Filter out empty tokens
+        raw_words = [w.strip() for w in raw_words if w.strip()]
+
+        if not raw_words:
+            logger.warning("No words found in script text")
+            srt_path.write_text("", encoding="utf-8")
+            json.dump({"words": []}, json_path.open("w", encoding="utf-8"))
+            return {"srt_path": str(srt_path.resolve()), "json_path": str(json_path.resolve()), "words": []}
+
+        # Distribute words evenly across the audio duration
+        word_count = len(raw_words)
+        time_per_word = duration / word_count
+        logger.info("Distributing {} words across {:.1f}s ({:.2f}s per word)", word_count, duration, time_per_word)
+
+        words = []
+        for i, word in enumerate(raw_words):
+            start = round(i * time_per_word, 3)
+            end = round((i + 1) * time_per_word, 3)
+            words.append({"word": word, "start": start, "end": end})
+
+        logger.info("Generated timing for {} words", len(words))
+
+        # Write SRT
         srt_result = self._generate_srt(words, str(srt_path))
         logger.success("SRT file written to {}", srt_result)
 
@@ -69,52 +95,11 @@ class SubtitleGenerator:
             "words": words,
         }
 
-    def _transcribe(self, audio_path: str) -> list[dict]:
-        """Transcribe audio using faster-whisper and extract word-level timestamps.
-
-        Args:
-            audio_path: Path to the audio file.
-
-        Returns:
-            A list of dicts, each containing "word", "start", and "end" (in seconds).
-        """
-        segments, info = self.model.transcribe(audio_path, word_timestamps=True)
-        logger.debug(
-            "Detected language: {} (probability {:.2f})",
-            info.language,
-            info.language_probability,
-        )
-
-        words = []
-        for segment in segments:
-            if segment.words is None:
-                continue
-            for word in segment.words:
-                words.append(
-                    {
-                        "word": word.word.strip(),
-                        "start": round(word.start, 3),
-                        "end": round(word.end, 3),
-                    }
-                )
-
-        return words
-
     def _generate_srt(
         self, words: list[dict], output_path: str, words_per_group: int = 4
     ) -> str:
-        """Group words into subtitle cues and write an SRT file.
-
-        Args:
-            words: List of word dicts with "word", "start", and "end".
-            output_path: Destination path for the SRT file.
-            words_per_group: Number of words per subtitle line (default 4).
-
-        Returns:
-            The path to the written SRT file.
-        """
+        """Group words into subtitle cues and write an SRT file."""
         if not words:
-            logger.warning("No words to write — SRT file will be empty")
             Path(output_path).write_text("", encoding="utf-8")
             return output_path
 
@@ -132,7 +117,7 @@ class SubtitleGenerator:
                 f"{self._format_timestamp(start_time)} --> {self._format_timestamp(end_time)}"
             )
             lines.append(text)
-            lines.append("")  # blank line between cues
+            lines.append("")
             index += 1
 
         srt_content = "\n".join(lines)
@@ -141,14 +126,7 @@ class SubtitleGenerator:
 
     @staticmethod
     def _format_timestamp(seconds: float) -> str:
-        """Convert a time value in seconds to SRT timestamp format.
-
-        Args:
-            seconds: Time in seconds (e.g. 62.450).
-
-        Returns:
-            Formatted string in HH:MM:SS,mmm format (e.g. "00:01:02,450").
-        """
+        """Convert seconds to SRT timestamp format (HH:MM:SS,mmm)."""
         if seconds < 0:
             seconds = 0.0
         hours = int(seconds // 3600)
@@ -156,26 +134,3 @@ class SubtitleGenerator:
         secs = int(seconds % 60)
         millis = min(int(round((seconds - int(seconds)) * 1000)), 999)
         return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
-
-
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) < 2:
-        logger.info("Usage: python subtitle_generator.py <audio_file> [output_dir]")
-        logger.info("Example: python subtitle_generator.py output/test_voiceover.mp3 output")
-        sys.exit(1)
-
-    audio_file = sys.argv[1]
-    out = sys.argv[2] if len(sys.argv) > 2 else "output"
-
-    gen = SubtitleGenerator(model_size="base")
-    result = gen.generate_subtitles(audio_file, output_dir=out)
-
-    logger.info("SRT path : {}", result["srt_path"])
-    logger.info("JSON path: {}", result["json_path"])
-    logger.info("Total words: {}", len(result["words"]))
-
-    # Print a preview of the first few words
-    for w in result["words"][:10]:
-        logger.info("  {:.3f}s - {:.3f}s : {}", w["start"], w["end"], w["word"])

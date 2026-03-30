@@ -90,6 +90,15 @@ Every visual prompt description must be structured in this exact order:
 3. **Lighting / color** — Specify light source, direction, and quality explicitly.
 4. **Mood / atmosphere** — The emotional tone and ambient feel of the scene.
 
+### Sora 2 Audio Direction (STRICT):
+
+Sora 2 generates videos WITH audio. Every visual prompt must include an **audio direction** line that describes the ambient sounds, background audio, or atmospheric soundscape for that clip. This audio will be extracted and mixed as background audio in the final video.
+
+- **Always describe specific sounds:** "soft wind through palm trees", "gentle rain on marble tiles", "distant adhan echoing across the valley", "quiet water flowing in a courtyard fountain", "birds chirping at dawn", "crackling fireplace with soft ambient hum".
+- **Match audio to the visual mood:** A serene mosque interior → "soft reverberant silence with distant footsteps on marble"; A desert landscape → "gentle desert wind carrying fine sand".
+- **Never request music, singing, or human speech** in audio direction — the voiceover handles narration, and nasheeds are added separately.
+- **Keep it atmospheric and ambient** — these are background sounds mixed at low volume beneath the voiceover.
+
 ### Sora 2 Best Practices (STRICT):
 
 - **One camera movement + one subject action per prompt.** Do NOT combine multiple camera moves (e.g., "pan left then tilt up"). Pick one.
@@ -121,10 +130,11 @@ You must output valid JSON and nothing else. No markdown fencing, no explanatory
   "visual_prompts": [
     {
       "timestamp": "0-5s",
-      "description": "Full Sora 2 prompt following the structure: scene prose → camera/cinematography → lighting/color → mood/atmosphere. Rich in material and sensory details. One camera movement, one subject action only.",
+      "description": "Full Sora 2 prompt following the structure: scene prose → camera/cinematography → lighting/color → mood/atmosphere → audio direction. Rich in material and sensory details. One camera movement, one subject action only.",
       "camera": "Specific single camera movement, e.g. 'slow dolly forward at knee height' or 'static wide shot' or 'crane shot descending'",
       "lighting": "Light source, direction, and quality, e.g. 'soft golden hour backlighting from the west'",
       "color_palette": ["hue1", "hue2", "hue3", "hue4", "hue5"],
+      "audio_direction": "Specific ambient sounds for this clip, e.g. 'soft wind through courtyard arches, distant birdsong, gentle water trickling from a stone fountain'",
       "type": "ai"
     },
     {

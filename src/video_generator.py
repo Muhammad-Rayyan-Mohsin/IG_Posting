@@ -149,6 +149,10 @@ class VideoGenerator:
             job_records = []  # for persistence
             for idx, prompt in enumerate(ai_prompts, start=1):
                 description = prompt.get("description", "")
+                # Append audio direction to prompt so Sora 2 generates matching audio
+                audio_direction = prompt.get("audio_direction", "")
+                if audio_direction:
+                    description = f"{description} Audio: {audio_direction}"
                 try:
                     duration = int(prompt.get("duration", 8))
                 except (TypeError, ValueError):

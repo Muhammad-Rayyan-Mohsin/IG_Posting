@@ -5,9 +5,9 @@ Runs daily via Railway cron. Generates an Islamic inspirational video
 and posts it as an Instagram Reel.
 
 Pipeline:
-    1. Generate script          (Gemini 2.0 Flash)
+    1. Generate script          (Claude Haiku 4.5)
     2. Generate voiceover       (Edge-TTS)
-    3. Generate subtitles       (faster-whisper)
+    3. Generate subtitles       (from script text + audio duration)
     4. Generate/fetch video clips (Sora 2 + Pexels)
     5. Assemble final video     (MoviePy + FFmpeg)
     6. Post to Instagram        (Graph API via Cloudflare R2)
@@ -187,11 +187,12 @@ def run_pipeline():
         logger.info("Voiceover saved: {}", voiceover_path)
 
         # ==============================================================
-        # Step 4: Generate subtitles
+        # Step 4: Generate subtitles (from script text + audio duration)
         # ==============================================================
         logger.info("Step 4/7 — Generating subtitles")
-        sub_gen = SubtitleGenerator(model_size="base")
+        sub_gen = SubtitleGenerator()
         subtitle_data = sub_gen.generate_subtitles(
+            script_text=script_data["script"],
             audio_path=voiceover_path,
             output_dir=str(output_dir),
         )
