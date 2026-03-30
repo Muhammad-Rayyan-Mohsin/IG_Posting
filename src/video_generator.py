@@ -470,6 +470,7 @@ class VideoGenerator:
         -------
         dict
             The ``data`` object from the KIE response (contains state, resultJson, etc.).
+            Returns ``{"state": "waiting"}`` on transient errors so polling continues.
         """
         headers = {"Authorization": f"Bearer {self.kie_api_key}"}
         response = requests.get(
@@ -482,11 +483,14 @@ class VideoGenerator:
 
         body = response.json()
         if body.get("code") != 200:
-            raise RuntimeError(
-                f"KIE poll error: code={body.get('code')} msg={body.get('msg')}"
+            # Treat non-200 poll responses as transient — log but keep polling
+            logger.warning(
+                "KIE poll returned non-200: code={} msg={} — treating as still waiting",
+                body.get("code"), body.get("msg"),
             )
+            return {"state": "waiting"}
 
-        return body.get("data", {})
+        return body.get("data") or {"state": "waiting"}
 
     def _extract_video_url(self, task_data: dict) -> str | None:
         """Extract the video download URL from a completed KIE task record.
