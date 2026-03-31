@@ -80,37 +80,283 @@ class VideoGenerator:
     # Public API
     # ------------------------------------------------------------------
 
-    def generate_all_clips(self, visual_prompts: list[dict]) -> dict:
-        """Generate both AI and stock clips from a list of visual prompts.
+    def generate_all_clips(
+        self,
+        visual_prompts: list[dict] | None = None,
+        scenes: list[dict] | None = None,
+        scene_bible: dict | None = None,
+    ) -> list[str]:
+        """Generate video clips.
 
-        Each prompt dict is expected to have at least:
-            - ``type``: ``"ai"`` or ``"stock"``
-            - ``description``: the textual prompt / search query
-            - ``duration``: desired clip length in seconds (optional, default 10)
+        When ``scenes`` are provided (new scene-card pipeline), delegates to
+        ``generate_scene_clips()`` and returns a flat list of clip paths (one
+        per scene, in order).
+
+        Falls back to the legacy ``visual_prompts`` behaviour when ``scenes``
+        is not supplied, returning a flat list of all ai + stock clip paths.
 
         Parameters
         ----------
-        visual_prompts : list[dict]
-            Visual prompts produced by the script generator.
+        visual_prompts : list[dict], optional
+            Legacy visual-prompt list (``type`` + ``description`` + ``duration``).
+        scenes : list[dict], optional
+            Scene cards produced by the script generator.
+        scene_bible : dict, optional
+            Global visual style anchors from the script (film_look, color_anchors, …).
 
         Returns
         -------
-        dict
-            ``{"ai_clips": [...], "stock_clips": [...]}`` with file paths.
+        list[str]
+            Ordered list of local clip file paths.
         """
-        logger.info(
-            "Generating clips from {} visual prompts", len(visual_prompts)
-        )
+        if scenes is not None:
+            logger.info(
+                "Scene-card pipeline — generating {} scene clips", len(scenes)
+            )
+            return self.generate_scene_clips(scenes, scene_bible or {})
 
+        # Legacy path
+        visual_prompts = visual_prompts or []
+        logger.info(
+            "Legacy path — generating clips from {} visual prompts",
+            len(visual_prompts),
+        )
         ai_clips = self.generate_ai_clips(visual_prompts)
         stock_clips = self.fetch_stock_clips(visual_prompts)
-
         logger.info(
             "All clips ready — {} AI clips, {} stock clips",
             len(ai_clips),
             len(stock_clips),
         )
-        return {"ai_clips": ai_clips, "stock_clips": stock_clips}
+        return ai_clips + stock_clips
+
+    def generate_scene_clips(
+        self, scenes: list[dict], scene_bible: dict
+    ) -> list[str]:
+        """Generate one Sora 2 clip per scene, ordered to match the scene list.
+
+        For each scene the prompt is built as:
+            [film_look from scene_bible] + [color_anchors] + scene.visual_prompt
+            + "Audio: " + scene.audio_direction
+
+        If a scene's clip fails, a Pexels fallback is attempted using
+        ``visual_prompts_library.json``.
+
+        Parameters
+        ----------
+        scenes : list[dict]
+            Scene cards from the script generator.  Each is expected to have at
+            least ``visual_prompt``, ``audio_direction``, and optionally
+            ``duration``.
+        scene_bible : dict
+            Global style anchors.  Relevant keys: ``film_look``,
+            ``color_anchors`` (list[str]).
+
+        Returns
+        -------
+        list[str]
+            Ordered list of local clip file paths (one per scene).  Scenes whose
+            clip could not be generated are represented by an empty-string
+            placeholder so callers can detect gaps if needed.
+        """
+        film_look = scene_bible.get("film_look", "")
+        color_anchors = scene_bible.get("color_anchors", [])
+        color_anchor_str = ", ".join(color_anchors) if color_anchors else ""
+
+        def _build_prompt(scene: dict) -> str:
+            visual = scene.get("visual_prompt", "")
+            audio = scene.get("audio_direction", "")
+            parts = []
+            if film_look and film_look.lower() not in visual.lower():
+                parts.append(film_look)
+            if color_anchor_str and color_anchor_str.lower() not in visual.lower():
+                parts.append(color_anchor_str)
+            parts.append(visual)
+            prompt = ". ".join(p.strip(". ") for p in parts if p)
+            if audio:
+                prompt = f"{prompt}. Audio: {audio}"
+            return prompt
+
+        # Phase 1: submit all jobs
+        persisted = self._load_jobs()
+
+        if persisted:
+            jobs = [(j["idx"], j["task_id"], j["output_path"]) for j in persisted]
+            logger.info("Resumed {} KIE scene jobs — skipping re-submission", len(jobs))
+        else:
+            jobs = []
+            job_records = []
+            for idx, scene in enumerate(scenes, start=1):
+                prompt = _build_prompt(scene)
+                try:
+                    duration = int(scene.get("duration", 8))
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "Scene #{} has invalid duration '{}', using default 8s",
+                        idx, scene.get("duration"),
+                    )
+                    duration = 8
+
+                if not prompt:
+                    logger.warning("Scene #{} has an empty visual_prompt, skipping", idx)
+                    continue
+
+                try:
+                    task_id, full_response = self._submit_sora_job(prompt, duration=duration)
+                    logger.info(
+                        "KIE scene job {}/{} submitted — taskId={} | full response: {}",
+                        idx, len(scenes), task_id, full_response,
+                    )
+                    # Immediate validation poll
+                    try:
+                        validation_data = self._poll_task(task_id)
+                        validation_status = validation_data.get("state", "unknown")
+                        if validation_status == "fail":
+                            logger.error(
+                                "KIE scene job {}/{} immediately rejected — taskId={} | data: {}",
+                                idx, len(scenes), task_id, validation_data,
+                            )
+                            continue
+                        logger.info(
+                            "KIE scene job {}/{} validation OK — status='{}' taskId={}",
+                            idx, len(scenes), validation_status, task_id,
+                        )
+                    except Exception as val_exc:
+                        logger.warning(
+                            "Could not validate KIE scene job {}/{} (taskId={}): {} — proceeding anyway",
+                            idx, len(scenes), task_id, val_exc,
+                        )
+
+                    output_path = str(self.clips_dir / f"scene_clip_{idx:02d}.mp4")
+                    jobs.append((idx, task_id, output_path))
+                    job_records.append({"idx": idx, "task_id": task_id, "output_path": output_path})
+                    self._save_jobs(job_records)
+                    if idx < len(scenes):
+                        time.sleep(2)
+                except Exception as exc:
+                    logger.error("Failed to submit scene clip {}/{}: {}", idx, len(scenes), exc)
+                    continue
+
+        if not jobs:
+            logger.warning("No KIE scene jobs were submitted successfully")
+            self._clear_jobs()
+            return []
+
+        logger.info(
+            "All {} scene jobs submitted — polling for completion (timeout={}s)",
+            len(jobs), self.DEFAULT_TIMEOUT_SECONDS,
+        )
+
+        # Phase 2: poll all jobs concurrently
+        # Build a results map keyed by idx so we preserve scene order
+        results: dict[int, str] = {}
+        pending = list(jobs)
+        start_time = time.time()
+        timeout = self.DEFAULT_TIMEOUT_SECONDS
+
+        while pending and (time.time() - start_time) < timeout:
+            still_pending = []
+            for idx, task_id, output_path in pending:
+                try:
+                    data = self._poll_task(task_id)
+                    status = data.get("state", "unknown")
+
+                    if status == "success":
+                        video_url = self._extract_video_url(data)
+                        if video_url:
+                            saved = self._download_video(video_url, output_path)
+                            results[idx] = saved
+                            logger.success(
+                                "Scene clip {} completed and downloaded: {}", idx, saved
+                            )
+                        else:
+                            logger.error(
+                                "Scene clip {} succeeded but no video URL found — "
+                                "will attempt Pexels fallback", idx,
+                            )
+                    elif status == "fail":
+                        logger.error(
+                            "Scene clip {} failed — full task data: {}", idx, data
+                        )
+                        # Attempt Pexels fallback for this scene
+                        scene = scenes[idx - 1]
+                        fallback_path = self._pexels_fallback_for_scene(scene, idx)
+                        if fallback_path:
+                            results[idx] = fallback_path
+                    else:
+                        progress = data.get("progress")
+                        if progress is not None:
+                            logger.info(
+                                "Scene clip {} — status='{}' progress={}%",
+                                idx, status, progress,
+                            )
+                        else:
+                            logger.info("Scene clip {} — status='{}'", idx, status)
+                        still_pending.append((idx, task_id, output_path))
+                except Exception as exc:
+                    logger.warning("Error polling scene clip {}: {}", idx, exc)
+                    still_pending.append((idx, task_id, output_path))
+
+            pending = still_pending
+            if pending:
+                logger.info(
+                    "{} scene jobs still pending, waiting {}s...",
+                    len(pending), self.POLL_INTERVAL_SECONDS,
+                )
+                time.sleep(self.POLL_INTERVAL_SECONDS)
+
+        if pending:
+            logger.error("{} KIE scene jobs timed out after {}s", len(pending), timeout)
+
+        self._clear_jobs()
+
+        # Return clips in scene order; use empty string for any gaps
+        clip_paths = [results.get(i + 1, "") for i in range(len(scenes))]
+        successful = [p for p in clip_paths if p]
+        logger.info(
+            "Scene clip generation complete — {}/{} clips produced",
+            len(successful), len(scenes),
+        )
+        return clip_paths
+
+    def _pexels_fallback_for_scene(self, scene: dict, idx: int) -> str | None:
+        """Attempt a Pexels stock-clip fallback for a single failed scene.
+
+        Uses the scene's ``visual_prompt`` as the search query.  If Pexels also
+        fails, falls back to a random entry from ``visual_prompts_library.json``.
+        """
+        if not self.pexels_api_key:
+            logger.warning("Pexels API key not set — cannot run fallback for scene {}", idx)
+            return None
+
+        query = scene.get("visual_prompt", "")
+        if not query:
+            fallback_prompts = self.get_fallback_prompts(count=1)
+            query = fallback_prompts[0]["description"] if fallback_prompts else "peaceful nature landscape"
+
+        logger.info("Attempting Pexels fallback for scene {}: '{}'", idx, query[:80])
+
+        try:
+            result = self._search_pexels(query, orientation="portrait")
+            if not result:
+                # Try a generic fallback from the library
+                fallback_prompts = self.get_fallback_prompts(count=1)
+                fallback_query = fallback_prompts[0]["description"] if fallback_prompts else "peaceful clouds sunset"
+                result = self._search_pexels(fallback_query, orientation="portrait")
+            if not result:
+                return None
+
+            video_url = self._select_best_pexels_file(result)
+            if not video_url:
+                return None
+
+            output_path = str(self.clips_dir / f"scene_clip_{idx:02d}_fallback.mp4")
+            saved = self._download_video(video_url, output_path)
+            logger.info("Pexels fallback for scene {} saved: {}", idx, saved)
+            return saved
+        except Exception as exc:
+            logger.error("Pexels fallback for scene {} failed: {}", idx, exc)
+            return None
 
     def generate_ai_clips(self, visual_prompts: list[dict]) -> list[str]:
         """Generate AI video clips via KIE Sora 2 Pro for prompts marked ``type='ai'``.

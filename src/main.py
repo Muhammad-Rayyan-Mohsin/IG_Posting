@@ -5,13 +5,11 @@ Runs daily via Railway cron. Generates an Islamic inspirational video
 and posts it as an Instagram Reel.
 
 Pipeline:
-    1. Generate script          (Claude Haiku 4.5)
-    2. Generate voiceover       (Edge-TTS)
-    3. Generate subtitles       (from script text + audio duration)
-    4. Generate/fetch video clips (Sora 2 + Pexels)
-    5. Assemble final video     (MoviePy + FFmpeg)
-    6. Post to Instagram        (Graph API via Cloudflare R2)
-    7. Log to content ledger    (Google Sheets)
+    1. Initialize content ledger  (Google Sheets deduplication guard)
+    2. Generate script             (Claude — scene cards format)
+    3. Generate video clips        (Sora 2 per scene via KIE AI)
+    4. Assemble final video        (scene-card driven, nasheed audio)
+    5. Post to Instagram           (Graph API via Cloudflare R2)
 """
 
 import os
@@ -48,8 +46,6 @@ logger.add(
 # Module imports (all modules live in the same src/ directory)
 # ---------------------------------------------------------------------------
 from script_generator import ScriptGenerator
-from voiceover_generator import VoiceoverGenerator
-from subtitle_generator import SubtitleGenerator
 from video_generator import VideoGenerator
 from video_assembler import VideoAssembler
 from instagram_poster import InstagramPoster
@@ -121,7 +117,7 @@ def run_pipeline():
         # ==============================================================
         # Step 1: Initialize content ledger
         # ==============================================================
-        logger.info("Step 1/7 — Initializing content ledger")
+        logger.info("Step 1/5 — Initializing content ledger")
         ledger = ContentLedger(
             credentials_json=os.environ["GOOGLE_SHEETS_CREDENTIALS"],
             spreadsheet_id=os.environ["GOOGLE_SHEETS_SPREADSHEET_ID"],
@@ -148,7 +144,7 @@ def run_pipeline():
         # ==============================================================
         # Step 2: Generate script
         # ==============================================================
-        logger.info("Step 2/7 — Generating script")
+        logger.info("Step 2/5 — Generating script")
         script_gen = ScriptGenerator(api_key=os.environ["ANTHROPIC_API_KEY"])
 
         used_refs = ledger.get_used_references()
@@ -164,73 +160,55 @@ def run_pipeline():
             script_data.get("category", "Unknown"),
         )
 
+        # Build a plain-text preview from all scene text_lines
+        scenes = script_data.get("scenes", [])
+        script_preview = " ".join(
+            line
+            for scene in scenes
+            for line in scene.get("text_lines", [])
+        )
+
         # Log to ledger with status "generated"
         ledger_row = ledger.log_entry(
             date=today,
             category=script_data.get("category", ""),
             title=script_data.get("title", ""),
-            script=script_data.get("script", ""),
+            script=script_preview,
             sources=script_data.get("sources", []),
             hashtag_set_id=script_data.get("hashtag_set_id", 0),
         )
         logger.info("Ledger entry created at row {}", ledger_row)
 
         # ==============================================================
-        # Step 3: Generate voiceover
+        # Step 3: Generate video clips (one per scene via Sora 2)
         # ==============================================================
-        logger.info("Step 3/7 — Generating voiceover")
-        tts = VoiceoverGenerator(output_dir=str(output_dir))
-        voiceover_path = tts.generate(
-            text=script_data["script"],
-            output_path=str(output_dir / "voiceover.mp3"),
-        )
-        logger.info("Voiceover saved: {}", voiceover_path)
-
-        # ==============================================================
-        # Step 4: Generate subtitles (from script text + audio duration)
-        # ==============================================================
-        logger.info("Step 4/7 — Generating subtitles")
-        sub_gen = SubtitleGenerator()
-        subtitle_data = sub_gen.generate_subtitles(
-            script_text=script_data["script"],
-            audio_path=voiceover_path,
-            output_dir=str(output_dir),
-        )
-        logger.info("Subtitles generated: {}", subtitle_data["srt_path"])
-
-        # ==============================================================
-        # Step 5: Generate / fetch video clips
-        # ==============================================================
-        logger.info("Step 5/7 — Generating video clips")
+        logger.info("Step 3/5 — Generating video clips")
         video_gen = VideoGenerator(
             kie_api_key=os.environ.get("KIE_API_KEY", ""),
             pexels_api_key=os.environ.get("PEXELS_API_KEY", ""),
             output_dir=str(output_dir),
         )
 
-        visual_prompts = script_data.get("visual_prompts", [])
-        clips_data = video_gen.generate_all_clips(visual_prompts)
-        all_clips = clips_data.get("ai_clips", []) + clips_data.get("stock_clips", [])
+        scene_bible = script_data.get("scene_bible", {})
+        all_clips = video_gen.generate_all_clips(scenes=scenes, scene_bible=scene_bible)
         logger.info("Video clips ready: {} total", len(all_clips))
 
-        # Fallback: if no clips were produced, use curated prompts from visual library
         if not all_clips:
             logger.warning("No clips generated — using fallback prompts from visual library")
             fallback_prompts = video_gen.get_fallback_prompts(count=4)
-            fallback_clips = video_gen.fetch_stock_clips(fallback_prompts)
-            all_clips = fallback_clips
+            all_clips = video_gen.fetch_stock_clips(fallback_prompts)
             logger.info("Fallback produced {} clips", len(all_clips))
 
         if not all_clips:
             raise RuntimeError(
                 "No video clips available — both AI generation and stock footage "
-                "fallback produced zero clips. Check OPENAI_API_KEY and PEXELS_API_KEY."
+                "fallback produced zero clips. Check KIE_API_KEY and PEXELS_API_KEY."
             )
 
         # ==============================================================
-        # Step 6: Assemble final video
+        # Step 4: Assemble final video
         # ==============================================================
-        logger.info("Step 6/7 — Assembling final video")
+        logger.info("Step 4/5 — Assembling final video")
         assembler = VideoAssembler(output_dir=str(output_dir))
 
         # Look for a nasheed file in assets/nasheeds/
@@ -244,15 +222,13 @@ def run_pipeline():
         if nasheed_path:
             logger.info("Using nasheed: {}", nasheed_path)
         else:
-            logger.info("No nasheed found — video will use voiceover only")
+            logger.info("No nasheed found — video will be assembled without background audio")
 
         final_video = assembler.assemble(
-            clips=all_clips,
-            voiceover_path=voiceover_path,
-            words=subtitle_data["words"],
+            scenes=scenes,
+            clip_paths=all_clips,
             nasheed_path=nasheed_path,
             output_filename="final_reel.mp4",
-            ai_clip_paths=clips_data.get("ai_clips", []),
         )
         logger.info("Final video assembled: {}", final_video)
 
@@ -260,9 +236,9 @@ def run_pipeline():
         ledger.update_status(ledger_row, "assembled", video_url="local")
 
         # ==============================================================
-        # Step 7: Post to Instagram
+        # Step 5: Post to Instagram
         # ==============================================================
-        logger.info("Step 7/7 — Posting to Instagram")
+        logger.info("Step 5/5 — Posting to Instagram")
         poster = InstagramPoster(
             ig_user_id=os.environ["IG_USER_ID"],
             ig_access_token=os.environ["IG_ACCESS_TOKEN"],

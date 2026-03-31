@@ -4,6 +4,8 @@ Script Generation Module for Automated Islamic Instagram Content Pipeline.
 Uses Claude Haiku 4.5 (via Anthropic API) to generate daily Islamic video
 scripts with a 7-day rotating topic cycle, hashtag rotation, and content
 deduplication.
+
+Output format: scene cards (3-5 scenes, 30-42 seconds total).
 """
 
 from __future__ import annotations
@@ -23,6 +25,8 @@ CONFIG_DIR = Path(__file__).parent.parent / "config"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 MODEL = "claude-haiku-4-5-20251001"
+
+VALID_SEGMENTS = {"HOOK", "CORE", "RESOLUTION"}
 
 
 class ScriptGenerator:
@@ -189,10 +193,11 @@ class ScriptGenerator:
         Args:
             used_references: List of previously used content references
                 (e.g. Quran verse refs, Hadith numbers) to avoid repetition.
+            last_hashtag_set_id: ID of the most recently used hashtag set.
 
         Returns:
-            A dict containing: title, script, visual_prompts, caption,
-            hashtags, category, sources.
+            A dict containing: title, scene_bible, scenes, caption,
+            sources, hashtags, hashtag_set_id, category, generated_at.
 
         Raises:
             ValueError: If the response cannot be parsed into valid JSON
@@ -212,14 +217,18 @@ class ScriptGenerator:
             )
 
         user_prompt = (
-            f"Generate a script for today's Islamic video.\n\n"
+            f"Generate a scene-card script for today's Islamic Instagram Reel.\n\n"
             f"**Category:** {category}\n"
             f"**Date:** {datetime.now().strftime('%A, %B %d, %Y')}\n"
             f"{exclusion_text}\n\n"
+            f"The video must be 30-42 seconds total, composed of 3-5 scenes. "
+            f"Each scene is a self-contained visual moment — no continuous narration. "
+            f"Use short, impactful text lines for on-screen display and rich visual "
+            f"prompts for AI video generation.\n\n"
             f"Respond ONLY with valid JSON in the exact format specified in your "
             f"system instructions. Do not include any text outside the JSON object. "
-            f"The JSON must include these fields: "
-            f"title, script, visual_prompts, caption, sources."
+            f"The JSON must include these top-level fields: "
+            f"title, scene_bible, scenes, caption, sources."
         )
 
         logger.info("Generating script for category: {}", category)
@@ -275,6 +284,16 @@ class ScriptGenerator:
 
         Handles responses wrapped in markdown code blocks (```json ... ```).
 
+        Validates the scene-card schema:
+          - Required top-level fields: title, scene_bible, scenes, caption, sources
+          - scene_bible fields: time_of_day, color_anchors (2-3 items), material_palette,
+            film_look, ambient_sound_base
+          - scenes: list of 3-5 dicts, each with id, segment, duration (6-12),
+            text_lines, emphasis_words, visual_prompt, camera, color_palette,
+            audio_direction; lighting is optional
+          - Total scene duration: 30-42 seconds
+          - sources: list
+
         Args:
             response_text: Raw text response from the model.
 
@@ -322,24 +341,17 @@ class ScriptGenerator:
                 f"Expected a JSON object (dict), got {type(parsed).__name__}"
             )
 
-        # Validate required fields
-        required_fields = ["title", "script", "visual_prompts", "caption", "sources"]
-        missing = [f for f in required_fields if f not in parsed]
-        if missing:
+        # --- Validate top-level required fields ---
+        required_top = ["title", "scene_bible", "scenes", "caption", "sources"]
+        missing_top = [f for f in required_top if f not in parsed]
+        if missing_top:
             raise ValueError(
-                f"Response JSON is missing required fields: {missing}. "
+                f"Response JSON is missing required top-level fields: {missing_top}. "
                 f"Got keys: {list(parsed.keys())}"
             )
 
-        # Basic type checks
         if not isinstance(parsed["title"], str) or not parsed["title"].strip():
             raise ValueError("Field 'title' must be a non-empty string")
-
-        if not isinstance(parsed["script"], str) or not parsed["script"].strip():
-            raise ValueError("Field 'script' must be a non-empty string")
-
-        if not isinstance(parsed["visual_prompts"], list):
-            raise ValueError("Field 'visual_prompts' must be a list")
 
         if not isinstance(parsed["caption"], str) or not parsed["caption"].strip():
             raise ValueError("Field 'caption' must be a non-empty string")
@@ -347,11 +359,111 @@ class ScriptGenerator:
         if not isinstance(parsed["sources"], list):
             raise ValueError("Field 'sources' must be a list")
 
+        # --- Validate scene_bible ---
+        scene_bible = parsed["scene_bible"]
+        if not isinstance(scene_bible, dict):
+            raise ValueError("Field 'scene_bible' must be an object")
+
+        required_bible_fields = [
+            "time_of_day", "color_anchors", "material_palette",
+            "film_look", "ambient_sound_base",
+        ]
+        missing_bible = [f for f in required_bible_fields if f not in scene_bible]
+        if missing_bible:
+            raise ValueError(
+                f"'scene_bible' is missing required fields: {missing_bible}"
+            )
+
+        if not isinstance(scene_bible["time_of_day"], str):
+            raise ValueError("'scene_bible.time_of_day' must be a string")
+
+        color_anchors = scene_bible["color_anchors"]
+        if not isinstance(color_anchors, list) or not (2 <= len(color_anchors) <= 3):
+            raise ValueError(
+                "'scene_bible.color_anchors' must be a list with 2-3 items, "
+                f"got {len(color_anchors) if isinstance(color_anchors, list) else type(color_anchors).__name__}"
+            )
+
+        if not isinstance(scene_bible["material_palette"], list):
+            raise ValueError("'scene_bible.material_palette' must be a list")
+
+        if not isinstance(scene_bible["film_look"], str):
+            raise ValueError("'scene_bible.film_look' must be a string")
+
+        if not isinstance(scene_bible["ambient_sound_base"], str):
+            raise ValueError("'scene_bible.ambient_sound_base' must be a string")
+
+        # --- Validate scenes ---
+        scenes = parsed["scenes"]
+        if not isinstance(scenes, list) or not (3 <= len(scenes) <= 5):
+            raise ValueError(
+                f"'scenes' must be a list of 3-5 items, "
+                f"got {len(scenes) if isinstance(scenes, list) else type(scenes).__name__}"
+            )
+
+        required_scene_fields = [
+            "id", "segment", "duration", "text_lines",
+            "emphasis_words", "visual_prompt", "camera",
+            "color_palette", "audio_direction",
+        ]
+
+        for idx, scene in enumerate(scenes):
+            if not isinstance(scene, dict):
+                raise ValueError(f"scenes[{idx}] must be an object")
+
+            missing_scene = [f for f in required_scene_fields if f not in scene]
+            if missing_scene:
+                raise ValueError(
+                    f"scenes[{idx}] is missing required fields: {missing_scene}"
+                )
+
+            if not isinstance(scene["id"], int):
+                raise ValueError(f"scenes[{idx}].id must be an int")
+
+            if scene["segment"] not in VALID_SEGMENTS:
+                raise ValueError(
+                    f"scenes[{idx}].segment must be one of {VALID_SEGMENTS}, "
+                    f"got '{scene['segment']}'"
+                )
+
+            duration = scene["duration"]
+            if not isinstance(duration, int) or not (6 <= duration <= 12):
+                raise ValueError(
+                    f"scenes[{idx}].duration must be an int between 6 and 12, "
+                    f"got {duration!r}"
+                )
+
+            if not isinstance(scene["text_lines"], list):
+                raise ValueError(f"scenes[{idx}].text_lines must be a list")
+
+            if not isinstance(scene["emphasis_words"], list):
+                raise ValueError(f"scenes[{idx}].emphasis_words must be a list")
+
+            if not isinstance(scene["visual_prompt"], str) or not scene["visual_prompt"].strip():
+                raise ValueError(f"scenes[{idx}].visual_prompt must be a non-empty string")
+
+            if not isinstance(scene["camera"], str) or not scene["camera"].strip():
+                raise ValueError(f"scenes[{idx}].camera must be a non-empty string")
+
+            if not isinstance(scene["color_palette"], list):
+                raise ValueError(f"scenes[{idx}].color_palette must be a list")
+
+            if not isinstance(scene["audio_direction"], str) or not scene["audio_direction"].strip():
+                raise ValueError(f"scenes[{idx}].audio_direction must be a non-empty string")
+
+        # --- Validate total duration ---
+        total_duration = sum(scene["duration"] for scene in scenes)
+        if not (30 <= total_duration <= 42):
+            raise ValueError(
+                f"Total scene duration must be 30-42 seconds, got {total_duration}s"
+            )
+
         logger.debug(
-            "Parsed response: title='{}', visual_prompts={}, sources={}",
-            parsed['title'],
-            len(parsed['visual_prompts']),
-            len(parsed['sources']),
+            "Parsed response: title='{}', scenes={}, total_duration={}s, sources={}",
+            parsed["title"],
+            len(scenes),
+            total_duration,
+            len(parsed["sources"]),
         )
 
         return parsed
