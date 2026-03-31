@@ -169,12 +169,14 @@ class VideoGenerator:
             parts = []
             if film_look and film_look.lower() not in visual.lower():
                 parts.append(film_look)
-            if color_anchor_str and color_anchor_str.lower() not in visual.lower():
-                parts.append(color_anchor_str)
             parts.append(visual)
             prompt = ". ".join(p.strip(". ") for p in parts if p)
             if audio:
                 prompt = f"{prompt}. Audio: {audio}"
+            # KIE has a prompt length limit — truncate to ~500 chars to avoid 500 errors
+            if len(prompt) > 500:
+                prompt = prompt[:497] + "..."
+                logger.debug("Truncated prompt to 500 chars for KIE API")
             return prompt
 
         # Phase 1: submit all jobs

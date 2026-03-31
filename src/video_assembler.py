@@ -147,6 +147,7 @@ class VideoAssembler:
         scene_clips: list[Any] = []
         audio_tracks: list[Any] = []
         overlay_clips: list[Any] = []
+        mixed_audio = None
         final = None
 
         try:
