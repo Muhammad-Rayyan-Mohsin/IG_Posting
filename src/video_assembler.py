@@ -1050,8 +1050,16 @@ class VideoAssembler:
         logger.warning("No preferred font found — Pillow will use its built-in default")
         return "Arial"
 
+    # Variable-font weight for Cormorant (wght axis). 600 = SemiBold.
+    FONT_WEIGHT_AXIS_VALUE = 600
+
     def _load_pil_font(self, font_size: int) -> ImageFont.FreeTypeFont:
         """Load a Pillow FreeTypeFont at the given size.
+
+        If the font is a variable font with a weight axis, sets it to
+        ``FONT_WEIGHT_AXIS_VALUE`` (SemiBold by default) so Cormorant's
+        variable TTF renders with the same visual weight as a dedicated
+        SemiBold static file.
 
         Parameters
         ----------
@@ -1065,7 +1073,14 @@ class VideoAssembler:
         """
         if self.font_path and self.font_path != "Arial":
             try:
-                return ImageFont.truetype(self.font_path, font_size)
+                font = ImageFont.truetype(self.font_path, font_size)
+                # If this is a variable font, try to pin the weight to SemiBold.
+                # Non-variable fonts raise OSError/AttributeError — safely ignored.
+                try:
+                    font.set_variation_by_axes([self.FONT_WEIGHT_AXIS_VALUE])
+                except (OSError, AttributeError, IOError):
+                    pass
+                return font
             except Exception as exc:
                 logger.warning("Failed to load font {}: {}", self.font_path, exc)
 
