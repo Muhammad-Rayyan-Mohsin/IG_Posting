@@ -1,21 +1,29 @@
 """
 Video Generator Module
 ----------------------
-Generates AI video clips via KIE AI (Sora 2 Pro) and fetches stock footage
-from Pexels API for the automated Islamic Instagram content pipeline.
+Generates AI video clips via fal.ai (Wan 2.5 preview text-to-video) and
+fetches stock footage from Pexels API for the automated Islamic Instagram
+content pipeline.
 
-Implements a hybrid approach: 2-3 AI-generated hero clips combined with
-2-3 stock footage filler/atmospheric clips.
+Wan 2.5 generates native audio alongside the video — audio cues embedded in
+the prompt (ambient wind, water, birdsong, stone reverb, etc.) become the
+primary soundscape of each clip.
+
+Constraints enforced here:
+- Each clip is snapped to 5 or 10 seconds (Wan 2.5 enum).
+- The sum of clip durations for a single video is capped at 90 seconds.
+- Resolution: 720p. Aspect ratio: 9:16 portrait (Instagram Reels).
+- Pexels stock footage is used as a per-scene fallback when Wan 2.5 fails.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import random
-import time
-from datetime import datetime
 from pathlib import Path
 
+import fal_client
 import requests
 from loguru import logger
 from tenacity import (
@@ -27,26 +35,40 @@ from tenacity import (
 
 
 class VideoGenerator:
-    """Generates video clips using KIE AI Sora 2 Pro (AI) and Pexels (stock footage)."""
+    """Generates video clips using Wan 2.5 (fal.ai) and Pexels (stock footage)."""
 
     # Target dimensions for Instagram Reels (9:16 portrait)
     TARGET_WIDTH = 1080
     TARGET_HEIGHT = 1920
 
-    # KIE API endpoints
-    KIE_CREATE_URL = "https://api.kie.ai/api/v1/jobs/createTask"
-    KIE_POLL_URL = "https://api.kie.ai/api/v1/jobs/recordInfo"
+    # fal.ai model endpoint
+    FAL_MODEL = "fal-ai/wan-25-preview/text-to-video"
 
-    # Polling configuration
-    POLL_INTERVAL_SECONDS = 20
-    DEFAULT_TIMEOUT_SECONDS = 5400  # 90 minutes — Sora 2 Pro can take up to 60+ min
+    # Wan 2.5 request defaults
+    WAN_RESOLUTION = "720p"
+    WAN_ASPECT_RATIO = "9:16"
+    # Compressed to fit Wan 2.5 negative_prompt max of 500 chars.
+    WAN_NEGATIVE_PROMPT = (
+        "blurry, distorted, low quality, human faces, people, hands, "
+        "body parts, silhouettes, watermarks, logos, "
+        "English text on surfaces, subtitles burned in scene, "
+        "Arabic text, Arabic calligraphy, Arabic script, Quranic text, "
+        "Quranic verses, open Quran pages, handwritten Arabic, "
+        "calligraphy with legible letters, rendered text on objects"
+    )
+
+    # Final video length ceiling (seconds)
+    MAX_TOTAL_DURATION = 90
+
+    # Wan 2.5 supports 800-char prompts. Leave 2 chars of safety headroom.
+    PROMPT_MAX_CHARS = 798
 
     # Pexels API base URL
     PEXELS_BASE_URL = "https://api.pexels.com/videos/search"
 
     def __init__(
         self,
-        kie_api_key: str,
+        fal_api_key: str,
         pexels_api_key: str,
         output_dir: str = "output",
     ):
@@ -55,26 +77,32 @@ class VideoGenerator:
 
         Parameters
         ----------
-        kie_api_key : str
-            API key for KIE AI (Sora 2 Pro access).
+        fal_api_key : str
+            API key for fal.ai. Set as FAL_KEY env var for fal_client.
         pexels_api_key : str
-            API key for Pexels video search.
+            API key for Pexels video search (fallback).
         output_dir : str
             Directory where generated/downloaded clips will be saved.
         """
-        self.kie_api_key = kie_api_key
+        self.fal_api_key = fal_api_key
         self.pexels_api_key = pexels_api_key
 
         self.output_dir = Path(output_dir)
         self.clips_dir = self.output_dir / "clips"
         self.clips_dir.mkdir(parents=True, exist_ok=True)
 
-        if not kie_api_key:
-            logger.warning("KIE_API_KEY is empty — Sora 2 AI clip generation will be unavailable")
+        if fal_api_key:
+            # fal_client reads FAL_KEY from env, so mirror whatever was passed in.
+            os.environ["FAL_KEY"] = fal_api_key
+        else:
+            logger.warning("FAL_API_KEY is empty — Wan 2.5 AI clip generation will be unavailable")
         if not pexels_api_key:
-            logger.warning("PEXELS_API_KEY is empty — Pexels stock footage fetching will be unavailable")
+            logger.warning("PEXELS_API_KEY is empty — Pexels stock footage fallback will be unavailable")
 
-        logger.info("VideoGenerator initialized — output dir: {}", self.output_dir)
+        logger.info(
+            "VideoGenerator initialized — model={} resolution={} aspect={} cap={}s",
+            self.FAL_MODEL, self.WAN_RESOLUTION, self.WAN_ASPECT_RATIO, self.MAX_TOTAL_DURATION,
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -82,256 +110,314 @@ class VideoGenerator:
 
     def generate_all_clips(
         self,
-        visual_prompts: list[dict] | None = None,
-        scenes: list[dict] | None = None,
+        scenes: list[dict],
         scene_bible: dict | None = None,
     ) -> list[str]:
-        """Generate video clips.
-
-        When ``scenes`` are provided (new scene-card pipeline), delegates to
-        ``generate_scene_clips()`` and returns a flat list of clip paths (one
-        per scene, in order).
-
-        Falls back to the legacy ``visual_prompts`` behaviour when ``scenes``
-        is not supplied, returning a flat list of all ai + stock clip paths.
-
-        Parameters
-        ----------
-        visual_prompts : list[dict], optional
-            Legacy visual-prompt list (``type`` + ``description`` + ``duration``).
-        scenes : list[dict], optional
-            Scene cards produced by the script generator.
-        scene_bible : dict, optional
-            Global visual style anchors from the script (film_look, color_anchors, …).
-
-        Returns
-        -------
-        list[str]
-            Ordered list of local clip file paths.
-        """
-        if scenes is not None:
-            logger.info(
-                "Scene-card pipeline — generating {} scene clips", len(scenes)
-            )
-            return self.generate_scene_clips(scenes, scene_bible or {})
-
-        # Legacy path
-        visual_prompts = visual_prompts or []
-        logger.info(
-            "Legacy path — generating clips from {} visual prompts",
-            len(visual_prompts),
-        )
-        ai_clips = self.generate_ai_clips(visual_prompts)
-        stock_clips = self.fetch_stock_clips(visual_prompts)
-        logger.info(
-            "All clips ready — {} AI clips, {} stock clips",
-            len(ai_clips),
-            len(stock_clips),
-        )
-        return ai_clips + stock_clips
-
-    def generate_scene_clips(
-        self, scenes: list[dict], scene_bible: dict
-    ) -> list[str]:
-        """Generate one Sora 2 clip per scene, ordered to match the scene list.
-
-        For each scene the prompt is built as:
-            [film_look from scene_bible] + [color_anchors] + scene.visual_prompt
-            + "Audio: " + scene.audio_direction
-
-        If a scene's clip fails, a Pexels fallback is attempted using
-        ``visual_prompts_library.json``.
+        """Generate one Wan 2.5 clip per scene, capped at 90s total.
 
         Parameters
         ----------
         scenes : list[dict]
-            Scene cards from the script generator.  Each is expected to have at
-            least ``visual_prompt``, ``audio_direction``, and optionally
-            ``duration``.
-        scene_bible : dict
-            Global style anchors.  Relevant keys: ``film_look``,
-            ``color_anchors`` (list[str]).
+            Scene cards from the script generator. Each scene must have
+            ``visual_prompt`` and ``audio_direction`` keys; ``duration`` is
+            snapped to 5 or 10 seconds.
+        scene_bible : dict, optional
+            Global style anchors (``film_look``, ``color_anchors``,
+            ``ambient_sound_base``) prepended to every prompt so independently
+            generated clips feel like one cohesive film.
 
         Returns
         -------
         list[str]
-            Ordered list of local clip file paths (one per scene).  Scenes whose
-            clip could not be generated are represented by an empty-string
-            placeholder so callers can detect gaps if needed.
+            Ordered list of local clip file paths. Scenes whose clip could
+            not be generated are represented by an empty string so the
+            assembler can detect gaps.
         """
-        film_look = scene_bible.get("film_look", "")
-        color_anchors = scene_bible.get("color_anchors", [])
-        color_anchor_str = ", ".join(color_anchors) if color_anchors else ""
+        scene_bible = scene_bible or {}
+        logger.info("Generating {} Wan 2.5 clips (90s cap)", len(scenes))
 
-        def _build_prompt(scene: dict) -> str:
-            visual = scene.get("visual_prompt", "")
-            audio = scene.get("audio_direction", "")
-            parts = []
-            if film_look and film_look.lower() not in visual.lower():
-                parts.append(film_look)
-            parts.append(visual)
-            prompt = ". ".join(p.strip(". ") for p in parts if p)
-            if audio:
-                prompt = f"{prompt}. Audio: {audio}"
-            # KIE has a prompt length limit — truncate to ~500 chars to avoid 500 errors
-            if len(prompt) > 500:
-                prompt = prompt[:497] + "..."
-                logger.debug("Truncated prompt to 500 chars for KIE API")
-            return prompt
+        clip_paths: list[str] = []
+        total_duration = 0.0
 
-        # Phase 1: submit all jobs
-        persisted = self._load_jobs()
+        for idx, scene in enumerate(scenes, start=1):
+            snapped_duration = self._snap_duration(scene.get("duration"))
 
-        if persisted:
-            jobs = [(j["idx"], j["task_id"], j["output_path"]) for j in persisted]
-            logger.info("Resumed {} KIE scene jobs — skipping re-submission", len(jobs))
-        else:
-            jobs = []
-            job_records = []
-            for idx, scene in enumerate(scenes, start=1):
-                prompt = _build_prompt(scene)
-                try:
-                    duration = int(scene.get("duration", 8))
-                except (TypeError, ValueError):
-                    logger.warning(
-                        "Scene #{} has invalid duration '{}', using default 8s",
-                        idx, scene.get("duration"),
-                    )
-                    duration = 8
-
-                if not prompt:
-                    logger.warning("Scene #{} has an empty visual_prompt, skipping", idx)
-                    continue
-
-                try:
-                    task_id, full_response = self._submit_sora_job(prompt, duration=duration)
-                    logger.info(
-                        "KIE scene job {}/{} submitted — taskId={} | full response: {}",
-                        idx, len(scenes), task_id, full_response,
-                    )
-                    # Immediate validation poll
-                    try:
-                        validation_data = self._poll_task(task_id)
-                        validation_status = validation_data.get("state", "unknown")
-                        if validation_status == "fail":
-                            logger.error(
-                                "KIE scene job {}/{} immediately rejected — taskId={} | data: {}",
-                                idx, len(scenes), task_id, validation_data,
-                            )
-                            continue
-                        logger.info(
-                            "KIE scene job {}/{} validation OK — status='{}' taskId={}",
-                            idx, len(scenes), validation_status, task_id,
-                        )
-                    except Exception as val_exc:
-                        logger.warning(
-                            "Could not validate KIE scene job {}/{} (taskId={}): {} — proceeding anyway",
-                            idx, len(scenes), task_id, val_exc,
-                        )
-
-                    output_path = str(self.clips_dir / f"scene_clip_{idx:02d}.mp4")
-                    jobs.append((idx, task_id, output_path))
-                    job_records.append({"idx": idx, "task_id": task_id, "output_path": output_path})
-                    self._save_jobs(job_records)
-                    if idx < len(scenes):
-                        time.sleep(2)
-                except Exception as exc:
-                    logger.error("Failed to submit scene clip {}/{}: {}", idx, len(scenes), exc)
-                    continue
-
-        if not jobs:
-            logger.warning("No KIE scene jobs were submitted successfully")
-            self._clear_jobs()
-            return []
-
-        logger.info(
-            "All {} scene jobs submitted — polling for completion (timeout={}s)",
-            len(jobs), self.DEFAULT_TIMEOUT_SECONDS,
-        )
-
-        # Phase 2: poll all jobs concurrently
-        # Build a results map keyed by idx so we preserve scene order
-        results: dict[int, str] = {}
-        pending = list(jobs)
-        start_time = time.time()
-        timeout = self.DEFAULT_TIMEOUT_SECONDS
-
-        while pending and (time.time() - start_time) < timeout:
-            still_pending = []
-            for idx, task_id, output_path in pending:
-                try:
-                    data = self._poll_task(task_id)
-                    status = data.get("state", "unknown")
-
-                    if status == "success":
-                        video_url = self._extract_video_url(data)
-                        if video_url:
-                            saved = self._download_video(video_url, output_path)
-                            results[idx] = saved
-                            logger.success(
-                                "Scene clip {} completed and downloaded: {}", idx, saved
-                            )
-                        else:
-                            logger.error(
-                                "Scene clip {} succeeded but no video URL found — "
-                                "will attempt Pexels fallback", idx,
-                            )
-                    elif status == "fail":
-                        logger.error(
-                            "Scene clip {} failed — full task data: {}", idx, data
-                        )
-                        # Attempt Pexels fallback for this scene
-                        scene = scenes[idx - 1]
-                        fallback_path = self._pexels_fallback_for_scene(scene, idx)
-                        if fallback_path:
-                            results[idx] = fallback_path
-                    else:
-                        progress = data.get("progress")
-                        if progress is not None:
-                            logger.info(
-                                "Scene clip {} — status='{}' progress={}%",
-                                idx, status, progress,
-                            )
-                        else:
-                            logger.info("Scene clip {} — status='{}'", idx, status)
-                        still_pending.append((idx, task_id, output_path))
-                except Exception as exc:
-                    logger.warning("Error polling scene clip {}: {}", idx, exc)
-                    still_pending.append((idx, task_id, output_path))
-
-            pending = still_pending
-            if pending:
-                logger.info(
-                    "{} scene jobs still pending, waiting {}s...",
-                    len(pending), self.POLL_INTERVAL_SECONDS,
+            if total_duration + snapped_duration > self.MAX_TOTAL_DURATION:
+                logger.warning(
+                    "Scene {}/{} would push total past {}s cap "
+                    "(current={}s, requested={}s) — dropping remaining scenes",
+                    idx, len(scenes), self.MAX_TOTAL_DURATION,
+                    total_duration, snapped_duration,
                 )
-                time.sleep(self.POLL_INTERVAL_SECONDS)
+                clip_paths.extend([""] * (len(scenes) - idx + 1))
+                break
 
-        if pending:
-            logger.error("{} KIE scene jobs timed out after {}s", len(pending), timeout)
+            prompt = self._build_prompt(scene, scene_bible)
+            if not prompt:
+                logger.warning("Scene {}/{} has empty visual_prompt — skipping", idx, len(scenes))
+                clip_paths.append("")
+                continue
 
-        self._clear_jobs()
+            output_path = str(self.clips_dir / f"scene_clip_{idx:02d}.mp4")
 
-        # Return clips in scene order; use empty string for any gaps
-        clip_paths = [results.get(i + 1, "") for i in range(len(scenes))]
+            try:
+                clip_path = self._generate_wan25_clip(
+                    prompt=prompt,
+                    duration_sec=snapped_duration,
+                    output_path=output_path,
+                    scene_idx=idx,
+                )
+                clip_paths.append(clip_path)
+                total_duration += snapped_duration
+                logger.success(
+                    "Scene {}/{} clip ready ({:.0f}s) — running total: {:.0f}s / {}s",
+                    idx, len(scenes), snapped_duration, total_duration, self.MAX_TOTAL_DURATION,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Wan 2.5 failed for scene {}/{}: {} — attempting Pexels fallback",
+                    idx, len(scenes), exc,
+                )
+                fallback = self._pexels_fallback_for_scene(scene, idx)
+                if fallback:
+                    clip_paths.append(fallback)
+                    total_duration += snapped_duration
+                else:
+                    clip_paths.append("")
+
         successful = [p for p in clip_paths if p]
         logger.info(
-            "Scene clip generation complete — {}/{} clips produced",
-            len(successful), len(scenes),
+            "Clip generation complete — {}/{} clips produced, total duration {:.0f}s",
+            len(successful), len(scenes), total_duration,
         )
         return clip_paths
 
-    def _pexels_fallback_for_scene(self, scene: dict, idx: int) -> str | None:
-        """Attempt a Pexels stock-clip fallback for a single failed scene.
+    def fetch_stock_clips(self, visual_prompts: list[dict]) -> list[str]:
+        """Fetch stock footage from Pexels.
 
-        Uses the scene's ``visual_prompt`` as the search query.  If Pexels also
-        fails, falls back to a random entry from ``visual_prompts_library.json``.
+        Kept as an emergency fallback path called by ``main.py`` when the
+        scene-card pipeline produces zero clips. Each entry uses the
+        ``description`` field as the Pexels search query.
         """
+        if not self.pexels_api_key:
+            logger.warning("Pexels API key not set — skipping stock clip fetching")
+            return []
+
+        if not visual_prompts:
+            return []
+
+        logger.info("Fetching {} stock clips from Pexels", len(visual_prompts))
+        clip_paths: list[str] = []
+
+        for idx, prompt in enumerate(visual_prompts, start=1):
+            description = prompt.get("description", "")
+            if not description:
+                continue
+
+            logger.info(
+                "Stock clip {}/{}: searching Pexels for '{}'",
+                idx, len(visual_prompts), description[:80],
+            )
+
+            try:
+                result = self._search_pexels(description, orientation="portrait")
+                if not result:
+                    continue
+
+                video_url = self._select_best_pexels_file(result)
+                if not video_url:
+                    continue
+
+                output_path = str(self.clips_dir / f"stock_clip_{idx:02d}.mp4")
+                saved_path = self._download_video(video_url, output_path)
+                clip_paths.append(saved_path)
+
+                logger.success(
+                    "Stock clip {}/{} saved: {}", idx, len(visual_prompts), saved_path,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Failed to fetch stock clip {}/{}: {}",
+                    idx, len(visual_prompts), exc,
+                )
+                continue
+
+        return clip_paths
+
+    def get_fallback_prompts(self, count: int = 4, category: str | None = None) -> list[dict]:
+        """Load fallback visual prompts from the curated library."""
+        config_path = Path(__file__).resolve().parent.parent / "config" / "visual_prompts_library.json"
+        if not config_path.exists():
+            return [{"description": "peaceful nature landscape with gentle clouds"}]
+
+        with open(config_path) as f:
+            library = json.load(f)
+
+        if category:
+            library = [p for p in library if p.get("category") == category] or library
+
+        selected = random.sample(library, min(count, len(library)))
+        return [{"description": p.get("prompt", "")} for p in selected]
+
+    # ------------------------------------------------------------------
+    # Wan 2.5 / fal.ai internals
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _snap_duration(raw_duration) -> int:
+        """Snap an arbitrary scene duration to Wan 2.5's enum values (5 or 10)."""
+        try:
+            value = float(raw_duration)
+        except (TypeError, ValueError):
+            return 10
+        return 5 if value <= 5 else 10
+
+    def _build_prompt(self, scene: dict, scene_bible: dict) -> str:
+        """Build a Wan 2.5 prompt from a scene card.
+
+        Structure (labelled sections so the model doesn't confuse visual
+        content with voiceover text):
+
+            VISUAL: [film_look]. [scene.visual_prompt].
+            AMBIENT SOUND: [scene_bible.ambient_sound_base], [scene.audio_direction].
+            VOICEOVER (off-camera audio only, do NOT render this text visually
+            in the scene): a warm, reverent English male narrator with an
+            unhurried storytelling cadence speaks clearly — <narration>.
+
+        The explicit "do NOT render this text visually" instruction is
+        critical: without it, Wan 2.5 sometimes writes the quoted narration
+        words onto surfaces in the scene (pages, walls, etc.). Quotes are
+        deliberately avoided around the narration text for the same reason.
+        """
+        film_look = scene_bible.get("film_look", "")
+        ambient_base = scene_bible.get("ambient_sound_base", "")
+
+        visual = (scene.get("visual_prompt") or "").strip()
+        audio = (scene.get("audio_direction") or "").strip()
+        narration = (scene.get("narration") or "").strip().strip('"').strip("'")
+
+        # --- VISUAL section ---
+        visual_parts: list[str] = []
+        if film_look and film_look.lower() not in visual.lower():
+            visual_parts.append(film_look.strip(". "))
+        if visual:
+            visual_parts.append(visual.strip(". "))
+        visual_str = ". ".join(p for p in visual_parts if p)
+        prompt = f"VISUAL: {visual_str}"
+
+        # --- AMBIENT SOUND section (environmental bed only, no voices) ---
+        audio_segments: list[str] = []
+        if ambient_base and ambient_base.lower() not in audio.lower():
+            audio_segments.append(ambient_base.strip(". "))
+        if audio:
+            audio_segments.append(audio.strip(". "))
+        if audio_segments:
+            prompt = f"{prompt}. AMBIENT SOUND: {', '.join(audio_segments)}"
+
+        # --- VOICEOVER section (off-camera audio, NOT visual text) ---
+        # Prefix is kept short so the full narration fits within PROMPT_MAX_CHARS.
+        # The negative_prompt carries the heavy "no text in scene" enforcement.
+        if narration:
+            prompt = (
+                f"{prompt}. VOICEOVER (audio only, do NOT display this text "
+                f"in the scene): warm reverent English male narrator speaks "
+                f"unhurriedly — {narration}"
+            )
+
+        if len(prompt) > self.PROMPT_MAX_CHARS:
+            prompt = prompt[: self.PROMPT_MAX_CHARS - 3].rstrip() + "..."
+            logger.debug("Truncated prompt to {} chars for Wan 2.5", self.PROMPT_MAX_CHARS)
+
+        return prompt
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=5, max=60),
+        retry=retry_if_exception_type((requests.RequestException, ConnectionError, TimeoutError)),
+        before_sleep=lambda rs: logger.warning(
+            "Retrying Wan 2.5 generation (attempt {}) after: {}",
+            rs.attempt_number, rs.outcome.exception(),
+        ),
+    )
+    def _generate_wan25_clip(
+        self,
+        prompt: str,
+        duration_sec: int,
+        output_path: str,
+        scene_idx: int,
+    ) -> str:
+        """Submit a single Wan 2.5 text-to-video job and download the result.
+
+        Uses ``fal_client.subscribe`` which blocks until the queue job
+        finishes, streaming logs for visibility. Wan 2.5 typically completes
+        in 1–3 minutes per clip.
+        """
+        if not self.fal_api_key:
+            raise RuntimeError("FAL_KEY not set — cannot call fal.ai")
+
+        logger.info(
+            "Scene {} — submitting Wan 2.5 job ({}s, {}, {})",
+            scene_idx, duration_sec, self.WAN_RESOLUTION, self.WAN_ASPECT_RATIO,
+        )
+        logger.debug("Scene {} prompt ({} chars): {}", scene_idx, len(prompt), prompt)
+
+        def _on_queue_update(update):
+            # Stream progress logs from fal.ai for long-running jobs.
+            if hasattr(update, "logs") and update.logs:
+                for entry in update.logs:
+                    msg = entry.get("message") if isinstance(entry, dict) else str(entry)
+                    if msg:
+                        logger.debug("Scene {} [fal]: {}", scene_idx, msg)
+
+        result = fal_client.subscribe(
+            self.FAL_MODEL,
+            arguments={
+                "prompt": prompt,
+                "negative_prompt": self.WAN_NEGATIVE_PROMPT,
+                "aspect_ratio": self.WAN_ASPECT_RATIO,
+                "resolution": self.WAN_RESOLUTION,
+                "duration": str(duration_sec),
+                "enable_prompt_expansion": True,
+                "enable_safety_checker": True,
+            },
+            with_logs=True,
+            on_queue_update=_on_queue_update,
+        )
+
+        video_url = self._extract_video_url(result)
+        if not video_url:
+            raise RuntimeError(f"Wan 2.5 returned no video URL — raw result: {result}")
+
+        logger.info("Scene {} — Wan 2.5 complete, downloading {}", scene_idx, video_url)
+        return self._download_video(video_url, output_path)
+
+    @staticmethod
+    def _extract_video_url(result) -> str | None:
+        """Pull the MP4 URL out of a fal.ai Wan 2.5 response.
+
+        Expected shape:
+            {"video": {"url": "...", "content_type": "video/mp4", ...}, "seed": ...}
+        """
+        if not isinstance(result, dict):
+            return None
+        video = result.get("video")
+        if isinstance(video, dict):
+            return video.get("url")
+        if isinstance(video, str):
+            return video
+        return None
+
+    # ------------------------------------------------------------------
+    # Pexels fallback internals
+    # ------------------------------------------------------------------
+
+    def _pexels_fallback_for_scene(self, scene: dict, idx: int) -> str | None:
+        """Attempt a Pexels stock-clip fallback for a single failed scene."""
         if not self.pexels_api_key:
             logger.warning("Pexels API key not set — cannot run fallback for scene {}", idx)
             return None
 
-        query = scene.get("visual_prompt", "")
+        query = scene.get("visual_prompt", "") or ""
         if not query:
             fallback_prompts = self.get_fallback_prompts(count=1)
             query = fallback_prompts[0]["description"] if fallback_prompts else "peaceful nature landscape"
@@ -341,7 +427,6 @@ class VideoGenerator:
         try:
             result = self._search_pexels(query, orientation="portrait")
             if not result:
-                # Try a generic fallback from the library
                 fallback_prompts = self.get_fallback_prompts(count=1)
                 fallback_query = fallback_prompts[0]["description"] if fallback_prompts else "peaceful clouds sunset"
                 result = self._search_pexels(fallback_query, orientation="portrait")
@@ -360,429 +445,16 @@ class VideoGenerator:
             logger.error("Pexels fallback for scene {} failed: {}", idx, exc)
             return None
 
-    def generate_ai_clips(self, visual_prompts: list[dict]) -> list[str]:
-        """Generate AI video clips via KIE Sora 2 Pro for prompts marked ``type='ai'``.
-
-        Parameters
-        ----------
-        visual_prompts : list[dict]
-            Full list of visual prompts; only those with ``type == "ai"``
-            will be processed.
-
-        Returns
-        -------
-        list[str]
-            List of local file paths to the downloaded AI-generated clips.
-        """
-        if not self.kie_api_key:
-            logger.warning("KIE API key not set — skipping AI clip generation")
-            return []
-
-        ai_prompts = [p for p in visual_prompts if p.get("type") == "ai"]
-        if not ai_prompts:
-            logger.warning("No AI prompts found in visual_prompts")
-            return []
-
-        logger.info("Processing {} AI video prompts via KIE Sora 2 Pro", len(ai_prompts))
-
-        # Phase 1: Submit jobs (or resume from a previous crashed run)
-        persisted = self._load_jobs()
-
-        if persisted:
-            # Restart scenario: task IDs already submitted, skip re-submission
-            jobs = [(j["idx"], j["task_id"], j["output_path"]) for j in persisted]
-            logger.info("Resumed {} KIE jobs — skipping re-submission", len(jobs))
-        else:
-            jobs = []  # list of (idx, task_id, output_path)
-            job_records = []  # for persistence
-            for idx, prompt in enumerate(ai_prompts, start=1):
-                description = prompt.get("description", "")
-                # Append audio direction to prompt so Sora 2 generates matching audio
-                audio_direction = prompt.get("audio_direction", "")
-                if audio_direction:
-                    description = f"{description} Audio: {audio_direction}"
-                try:
-                    duration = int(prompt.get("duration", 8))
-                except (TypeError, ValueError):
-                    logger.warning("AI prompt #{} has invalid duration '{}', using default 8s", idx, prompt.get("duration"))
-                    duration = 8
-                if not description:
-                    logger.warning("AI prompt #{} has an empty description, skipping", idx)
-                    continue
-                try:
-                    task_id, full_response = self._submit_sora_job(description, duration=duration)
-                    logger.info(
-                        "KIE job {}/{} submitted — taskId={} | full response: {}",
-                        idx, len(ai_prompts), task_id, full_response,
-                    )
-                    # Validate: do one immediate poll to confirm the job was accepted
-                    try:
-                        validation_data = self._poll_task(task_id)
-                        validation_status = validation_data.get("state", "unknown")
-                        if validation_status == "fail":
-                            logger.error(
-                                "KIE job {}/{} was immediately rejected — taskId={} | validation data: {}",
-                                idx, len(ai_prompts), task_id, validation_data,
-                            )
-                            continue
-                        logger.info(
-                            "KIE job {}/{} validation OK — status='{}' taskId={}",
-                            idx, len(ai_prompts), validation_status, task_id,
-                        )
-                    except Exception as val_exc:
-                        logger.warning(
-                            "Could not validate KIE job {}/{} (taskId={}): {} — proceeding anyway",
-                            idx, len(ai_prompts), task_id, val_exc,
-                        )
-                    output_path = str(self.clips_dir / f"ai_clip_{idx:02d}.mp4")
-                    jobs.append((idx, task_id, output_path))
-                    job_records.append({"idx": idx, "task_id": task_id, "output_path": output_path})
-                    # Persist after each submission so a crash mid-loop still saves what we have
-                    self._save_jobs(job_records)
-                    if idx < len(ai_prompts):
-                        time.sleep(2)  # small delay between submissions to avoid rate limiting
-                except Exception as exc:
-                    logger.error("Failed to submit AI clip {}/{}: {}", idx, len(ai_prompts), exc)
-                    continue
-
-        if not jobs:
-            logger.warning("No KIE jobs were submitted successfully")
-            self._clear_jobs()
-            return []
-
-        logger.info("All {} jobs submitted — now polling for completion (timeout={}s)", len(jobs), self.DEFAULT_TIMEOUT_SECONDS)
-
-        # Phase 2: Poll all jobs concurrently
-        clip_paths = []
-        pending = list(jobs)
-        start_time = time.time()
-        timeout = self.DEFAULT_TIMEOUT_SECONDS
-
-        while pending and (time.time() - start_time) < timeout:
-            still_pending = []
-            for idx, task_id, output_path in pending:
-                try:
-                    data = self._poll_task(task_id)
-                    status = data.get("state", "unknown")
-
-                    if status == "success":
-                        video_url = self._extract_video_url(data)
-                        if video_url:
-                            saved = self._download_video(video_url, output_path)
-                            clip_paths.append(saved)
-                            logger.success("AI clip {} completed and downloaded: {}", idx, saved)
-                        else:
-                            logger.error("AI clip {} succeeded but no video URL found in response", idx)
-                    elif status == "fail":
-                        logger.error(
-                            "AI clip {} failed — full task data: {}",
-                            idx,
-                            data,
-                        )
-                    else:
-                        # waiting / queuing / generating
-                        progress = data.get("progress")
-                        if progress is not None:
-                            logger.info("AI clip {} — status='{}' progress={}%", idx, status, progress)
-                        else:
-                            logger.info("AI clip {} — status='{}'", idx, status)
-                        still_pending.append((idx, task_id, output_path))
-                except Exception as exc:
-                    logger.warning("Error polling AI clip {}: {}", idx, exc)
-                    still_pending.append((idx, task_id, output_path))
-
-            pending = still_pending
-            if pending:
-                logger.info("{} jobs still pending, waiting {}s...", len(pending), self.POLL_INTERVAL_SECONDS)
-                time.sleep(self.POLL_INTERVAL_SECONDS)
-
-        if pending:
-            logger.error("{} KIE jobs timed out after {}s", len(pending), timeout)
-
-        self._clear_jobs()
-        return clip_paths
-
-    def fetch_stock_clips(self, visual_prompts: list[dict]) -> list[str]:
-        """Fetch stock footage from Pexels for prompts marked ``type='stock'``.
-
-        Parameters
-        ----------
-        visual_prompts : list[dict]
-            Full list of visual prompts; only those with ``type == "stock"``
-            will be processed.
-
-        Returns
-        -------
-        list[str]
-            List of local file paths to the downloaded stock clips.
-        """
-        if not self.pexels_api_key:
-            logger.warning("Pexels API key not set — skipping stock clip fetching")
-            return []
-
-        stock_prompts = [p for p in visual_prompts if p.get("type") == "stock"]
-        if not stock_prompts:
-            logger.warning("No stock prompts found in visual_prompts")
-            return []
-
-        logger.info("Fetching {} stock clips from Pexels", len(stock_prompts))
-        clip_paths: list[str] = []
-
-        for idx, prompt in enumerate(stock_prompts, start=1):
-            description = prompt.get("description", "")
-            if not description:
-                logger.warning("Stock prompt #{} has an empty description, skipping", idx)
-                continue
-
-            logger.info(
-                "Stock clip {}/{}: searching Pexels for '{}'",
-                idx,
-                len(stock_prompts),
-                description[:80],
-            )
-
-            try:
-                result = self._search_pexels(description, orientation="portrait")
-                if not result:
-                    logger.warning(
-                        "No Pexels results for '{}', skipping", description[:80]
-                    )
-                    continue
-
-                video_url = self._select_best_pexels_file(result)
-                if not video_url:
-                    logger.warning(
-                        "No suitable video file found in Pexels result, skipping"
-                    )
-                    continue
-
-                output_path = str(self.clips_dir / f"stock_clip_{idx:02d}.mp4")
-                saved_path = self._download_video(video_url, output_path)
-                clip_paths.append(saved_path)
-
-                logger.success(
-                    "Stock clip {}/{} saved: {}", idx, len(stock_prompts), saved_path
-                )
-
-            except Exception as exc:
-                logger.error(
-                    "Failed to fetch stock clip {}/{}: {}", idx, len(stock_prompts), exc
-                )
-                continue
-
-        return clip_paths
-
-    def get_fallback_prompts(self, count: int = 4, category: str = None) -> list[dict]:
-        """Load fallback visual prompts from the curated library."""
-        config_path = Path(__file__).resolve().parent.parent / "config" / "visual_prompts_library.json"
-        if not config_path.exists():
-            return [{"description": "peaceful nature landscape with gentle clouds", "type": "stock"}]
-
-        with open(config_path) as f:
-            library = json.load(f)
-
-        if category:
-            library = [p for p in library if p.get("category") == category] or library
-
-        selected = random.sample(library, min(count, len(library)))
-        return [
-            {
-                "description": p.get("prompt", ""),
-                "type": "stock",  # fallback always uses stock to avoid AI costs
-                "duration": p.get("duration_suggestion", 8),
-            }
-            for p in selected
-        ]
-
-    # ------------------------------------------------------------------
-    # Job persistence — survives process restarts
-    # ------------------------------------------------------------------
-
-    @property
-    def _jobs_file(self) -> Path:
-        return self.clips_dir / "kie_jobs.json"
-
-    def _save_jobs(self, jobs: list[dict]) -> None:
-        """Persist submitted KIE task IDs to disk so restarts can resume polling."""
-        payload = {
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "jobs": jobs,
-        }
-        self._jobs_file.write_text(json.dumps(payload, indent=2))
-
-    def _load_jobs(self) -> list[dict] | None:
-        """Load persisted jobs if they were submitted today. Returns None if stale/missing."""
-        if not self._jobs_file.exists():
-            return None
-        try:
-            payload = json.loads(self._jobs_file.read_text())
-            if payload.get("date") != datetime.now().strftime("%Y-%m-%d"):
-                logger.info("Stale KIE jobs file ({}), ignoring", payload.get("date"))
-                return None
-            jobs = payload.get("jobs", [])
-            if jobs:
-                logger.info("Resuming {} KIE jobs from previous run", len(jobs))
-            return jobs
-        except Exception as exc:
-            logger.warning("Could not read KIE jobs file: {}", exc)
-            return None
-
-    def _clear_jobs(self) -> None:
-        """Delete the jobs file once all work is complete."""
-        if self._jobs_file.exists():
-            self._jobs_file.unlink()
-
-    # ------------------------------------------------------------------
-    # KIE Sora 2 Pro internals
-    # ------------------------------------------------------------------
-
-    def _duration_to_n_frames(self, duration: int) -> str:
-        """Map a requested duration in seconds to KIE's n_frames parameter.
-
-        KIE accepts only "10" or "15". Clips <= 10s map to "10", longer to "15".
-        """
-        return "15" if duration > 10 else "10"
-
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=5, max=60),
-        retry=retry_if_exception_type((requests.RequestException, ConnectionError)),
-        before_sleep=lambda rs: logger.warning(
-            "Retrying KIE job submission (attempt {}) after: {}",
-            rs.attempt_number,
-            rs.outcome.exception(),
-        ),
-    )
-    def _submit_sora_job(self, prompt: str, duration: int = 8) -> tuple[str, dict]:
-        """Submit a Sora 2 Pro text-to-video job via KIE AI.
-
-        Parameters
-        ----------
-        prompt : str
-            The visual prompt describing the desired video.
-        duration : int
-            Desired clip duration in seconds (used to select n_frames).
-
-        Returns
-        -------
-        tuple[str, dict]
-            A tuple of (taskId, full_response_data) for logging and validation.
-        """
-        n_frames = self._duration_to_n_frames(duration)
-
-        headers = {
-            "Authorization": f"Bearer {self.kie_api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": "sora-2-text-to-video",
-            "input": {
-                "prompt": prompt,
-                "aspect_ratio": "portrait",
-                "n_frames": n_frames,
-            },
-        }
-
-        response = requests.post(
-            self.KIE_CREATE_URL, headers=headers, json=payload, timeout=30
-        )
-        response.raise_for_status()
-
-        data = response.json()
-        if data.get("code") != 200:
-            logger.error(
-                "KIE API unexpected response on submit — full body: {}", data
-            )
-            raise RuntimeError(
-                f"KIE API error on submit: code={data.get('code')} msg={data.get('msg')}"
-            )
-
-        task_id = data.get("data", {}).get("taskId")
-        if not task_id:
-            logger.error("KIE API returned no taskId — full body: {}", data)
-            raise ValueError(f"KIE API did not return a taskId. Response: {data}")
-
-        return task_id, data
-
-    def _poll_task(self, task_id: str) -> dict:
-        """Fetch the current state of a KIE task.
-
-        Parameters
-        ----------
-        task_id : str
-            The taskId returned by ``_submit_sora_job``.
-
-        Returns
-        -------
-        dict
-            The ``data`` object from the KIE response (contains state, resultJson, etc.).
-            Returns ``{"state": "waiting"}`` on transient errors so polling continues.
-        """
-        headers = {"Authorization": f"Bearer {self.kie_api_key}"}
-        response = requests.get(
-            self.KIE_POLL_URL,
-            headers=headers,
-            params={"taskId": task_id},
-            timeout=30,
-        )
-        response.raise_for_status()
-
-        body = response.json()
-        if body.get("code") != 200:
-            # Treat non-200 poll responses as transient — log but keep polling
-            logger.warning(
-                "KIE poll returned non-200: code={} msg={} — treating as still waiting",
-                body.get("code"), body.get("msg"),
-            )
-            return {"state": "waiting"}
-
-        return body.get("data") or {"state": "waiting"}
-
-    def _extract_video_url(self, task_data: dict) -> str | None:
-        """Extract the video download URL from a completed KIE task record.
-
-        The video URL lives inside ``resultJson``, which is a JSON-encoded string
-        containing ``{"resultUrls": ["https://...mp4"]}``.
-
-        Parameters
-        ----------
-        task_data : dict
-            The ``data`` object from a KIE poll response.
-
-        Returns
-        -------
-        str or None
-            The video URL, or ``None`` if it could not be found.
-        """
-        result_json_str = task_data.get("resultJson")
-        if not result_json_str:
-            return None
-
-        try:
-            result = json.loads(result_json_str)
-            urls = result.get("resultUrls", [])
-            return urls[0] if urls else None
-        except (json.JSONDecodeError, IndexError, TypeError) as exc:
-            logger.warning("Could not parse resultJson: {} — raw: {}", exc, result_json_str)
-            return None
-
-    # ------------------------------------------------------------------
-    # Pexels internals
-    # ------------------------------------------------------------------
-
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=15),
         retry=retry_if_exception_type((requests.RequestException, ConnectionError)),
         before_sleep=lambda rs: logger.warning(
             "Retrying Pexels search (attempt {}) after: {}",
-            rs.attempt_number,
-            rs.outcome.exception(),
+            rs.attempt_number, rs.outcome.exception(),
         ),
     )
-    def _search_pexels(
-        self, query: str, orientation: str = "portrait"
-    ) -> dict | None:
+    def _search_pexels(self, query: str, orientation: str = "portrait") -> dict | None:
         """Search the Pexels API for videos matching a query."""
         headers = {"Authorization": self.pexels_api_key}
         params = {
@@ -804,9 +476,7 @@ class VideoGenerator:
             logger.info("Pexels returned 0 results for '{}'", query[:80])
             return None
 
-        logger.info(
-            "Pexels returned {} results for '{}'", len(videos), query[:80]
-        )
+        logger.info("Pexels returned {} results for '{}'", len(videos), query[:80])
         return videos[0]
 
     def _select_best_pexels_file(self, video_result: dict) -> str | None:
@@ -830,9 +500,7 @@ class VideoGenerator:
 
         logger.debug(
             "Selected Pexels file: {}x{} ({})",
-            best.get("width"),
-            best.get("height"),
-            best.get("quality"),
+            best.get("width"), best.get("height"), best.get("quality"),
         )
         return best.get("link")
 
@@ -846,8 +514,7 @@ class VideoGenerator:
         retry=retry_if_exception_type((requests.RequestException, ConnectionError)),
         before_sleep=lambda rs: logger.warning(
             "Retrying download (attempt {}) after: {}",
-            rs.attempt_number,
-            rs.outcome.exception(),
+            rs.attempt_number, rs.outcome.exception(),
         ),
     )
     def _download_video(self, url: str, output_path: str) -> str:
@@ -869,8 +536,7 @@ class VideoGenerator:
 
         logger.info(
             "Downloaded {:.1f} MB to {}",
-            total_bytes / (1024 * 1024),
-            output_path,
+            total_bytes / (1024 * 1024), output_path,
         )
         return str(output.resolve())
 
@@ -880,60 +546,54 @@ class VideoGenerator:
 # ----------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import os
-
     from dotenv import load_dotenv
 
     load_dotenv()
 
-    kie_key = os.getenv("KIE_API_KEY")
+    fal_key = os.getenv("FAL_API_KEY") or os.getenv("FAL_KEY")
     pexels_key = os.getenv("PEXELS_API_KEY")
 
-    if not kie_key:
-        logger.error("KIE_API_KEY not set in environment or .env file")
-        raise SystemExit(1)
-    if not pexels_key:
-        logger.error("PEXELS_API_KEY not set in environment or .env file")
+    if not fal_key:
+        logger.error("FAL_API_KEY not set in environment or .env file")
         raise SystemExit(1)
 
     generator = VideoGenerator(
-        kie_api_key=kie_key,
-        pexels_api_key=pexels_key,
+        fal_api_key=fal_key,
+        pexels_api_key=pexels_key or "",
         output_dir="output",
     )
 
-    sample_prompts = [
+    sample_scene_bible = {
+        "film_look": "35mm Kodak 5219 with natural grain, anamorphic 2.0x",
+        "color_anchors": ["warm amber", "cream", "deep indigo"],
+        "ambient_sound_base": "gentle desert wind with distant birdsong",
+    }
+    sample_scenes = [
         {
-            "type": "ai",
-            "description": (
-                "A serene mosque at sunset with golden light streaming through "
-                "arched windows, dust particles floating in the air, "
-                "cinematic 4K, slow motion"
+            "id": 1,
+            "duration": 10,
+            "narration": (
+                "A man once carried a single verse in his heart for forty years "
+                "before he understood what it meant."
             ),
-            "duration": 8,
-        },
-        {
-            "type": "ai",
-            "description": (
-                "Close-up of an ornate Quran on a wooden stand, pages gently "
-                "turning in a soft breeze, warm candlelight, bokeh background"
+            "visual_prompt": (
+                "A single brass oil lamp flickering on an ancient stone ledge "
+                "inside a vast domed hall, shafts of warm golden sunlight piercing "
+                "through narrow arched windows above, illuminating slow dust "
+                "particles drifting in the still air. Slow dolly forward, 35mm lens. "
+                "Rich amber highlights on weathered sandstone walls, deep shadow "
+                "pooling beneath the carved archways."
             ),
-            "duration": 6,
-        },
-        {
-            "type": "stock",
-            "description": "peaceful nature sunset clouds timelapse",
-            "duration": 5,
-        },
-        {
-            "type": "stock",
-            "description": "person praying meditation peaceful",
-            "duration": 5,
+            "audio_direction": (
+                "large stone domed interior with long natural reverb, soft crackle "
+                "of oil lamp flame, gentle desert wind outside, distant call to "
+                "prayer echoing faintly through the arches"
+            ),
         },
     ]
 
-    logger.info("Starting test clip generation...")
-    result = generator.generate_all_clips(sample_prompts)
+    logger.info("Starting Wan 2.5 test clip generation...")
+    result = generator.generate_all_clips(sample_scenes, sample_scene_bible)
 
     print("\n" + "=" * 60)
     print("GENERATED CLIPS")

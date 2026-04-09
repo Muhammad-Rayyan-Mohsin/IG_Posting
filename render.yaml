@@ -1,6 +1,6 @@
 services:
   - type: cron
-    name: ig-posting-pipeline
+    name: ig-posting-pipeline-v2
     runtime: docker
     dockerfilePath: ./Dockerfile
     schedule: "0 6 * * 1,4"  # Monday & Thursday at 6am UTC
@@ -9,7 +9,9 @@ services:
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
-      - key: KIE_API_KEY
+      - key: FAL_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
         sync: false
       - key: PEXELS_API_KEY
         sync: false

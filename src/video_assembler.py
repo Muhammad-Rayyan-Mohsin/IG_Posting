@@ -5,19 +5,21 @@ Assembles the final Instagram Reel from scene-card-driven AI-generated clips.
 
 Architecture: scene-card-driven (not voiceover-driven).
 - Duration is determined by the sum of scene card durations.
-- Each clip's native Sora 2 audio is the primary soundscape (80% volume).
+- Each clip's native Wan 2.5 audio is the primary soundscape (90% volume).
 - Text overlays are rendered via Pillow (not MoviePy TextClip).
-- Optional nasheed mixed at 20% on top.
+- Optional nasheed mixed at 12% underlay.
 
 Uses MoviePy 2.x and FFmpeg for all video/audio processing.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import requests
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
 from moviepy import (
@@ -50,7 +52,7 @@ _FONTS_DIR = _ASSETS_DIR / "fonts"
 
 
 class VideoAssembler:
-    """Assembles scene-card-driven clips with Sora 2 audio and Pillow text overlays into a final MP4."""
+    """Assembles scene-card-driven clips with Wan 2.5 native audio and Pillow text overlays into a final MP4."""
 
     # Target canvas for Instagram Reels (9:16 portrait)
     TARGET_WIDTH = 1080
@@ -70,9 +72,31 @@ class VideoAssembler:
     TEXT_BG_CORNER_RADIUS = 16            # rounded corner radius (px)
     TEXT_FADE_IN_DURATION = 0.25          # seconds for fade-in per text card
 
-    # Audio mixing
-    SORA_AUDIO_VOLUME = 0.80   # Sora 2 clip audio at 80%
-    NASHEED_VOLUME = 0.20       # optional nasheed at 20%
+    # Headline text card (middle of frame) — disabled now that narration +
+    # subtitles carry the story. Flip to True if you want a centered emphasis
+    # card back for HOOK scenes or source citations.
+    SHOW_HEADLINE_TEXT = False
+
+    # Narration subtitles (burned in from scene.narration)
+    ENABLE_SUBTITLES = True
+    SUBTITLE_FONT_SIZE = 52
+    SUBTITLE_Y_CENTER = 1500               # bottom third, clear of IG UI (bottom ~250px)
+    SUBTITLE_BG_OPACITY = 0.75             # slightly more opaque than text cards
+    SUBTITLE_WORDS_PER_CHUNK = 4           # TikTok/Reels auto-caption style
+    SUBTITLE_MIN_DURATION = 0.6            # never flash a chunk faster than this
+    SUBTITLE_FADE_IN_DURATION = 0.12       # faster fade than text cards
+
+    # Whisper-based subtitle sync. If OPENAI_API_KEY is set, each clip's
+    # audio is transcribed via OpenAI Whisper and word-level timestamps drive
+    # subtitle timing. Falls back to uniform distribution if unset.
+    WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions"
+    WHISPER_MODEL = "whisper-1"
+    WHISPER_TIMEOUT_SECONDS = 60
+
+    # Audio mixing — Wan 2.5 native audio is the primary soundscape.
+    # Nasheed is kept as a gentle underlay for spiritual continuity.
+    SORA_AUDIO_VOLUME = 0.90   # Wan 2.5 native clip audio at 90%
+    NASHEED_VOLUME = 0.12       # optional nasheed underlay at 12%
 
     # Export settings
     EXPORT_CODEC = "libx264"
@@ -121,8 +145,8 @@ class VideoAssembler:
             Ordered list of video clip file paths — one per scene.
         nasheed_path : str or None
             Optional path to background nasheed audio. Mixed at 20% volume on
-            top of the Sora 2 audio. If ``None`` or file does not exist, it
-            is skipped.
+            top of the Wan 2.5 native audio. If ``None`` or file does not
+            exist, it is skipped.
         output_filename : str
             Name for the final output file (default ``"final.mp4"``).
 
@@ -171,7 +195,7 @@ class VideoAssembler:
                 # 2. Trim or loop to scene duration
                 clip = self._match_duration(clip, scene_duration)
 
-                # 3. Extract clip audio at 80% volume (Sora 2 primary soundscape)
+                # 3. Extract clip audio at 90% volume (Wan 2.5 native soundscape)
                 if clip.audio is not None:
                     scene_audio = clip.audio.with_volume_scaled(self.SORA_AUDIO_VOLUME)
                     # Position audio at the correct timeline offset
@@ -194,7 +218,7 @@ class VideoAssembler:
                 segment = scene.get("segment", "")
                 font_size = self.TEXT_FONT_SIZE_HOOK if segment == "HOOK" else self.TEXT_FONT_SIZE_NORMAL
 
-                if text_lines:
+                if self.SHOW_HEADLINE_TEXT and text_lines:
                     text_overlays = self._create_text_overlays(
                         text_lines=text_lines,
                         emphasis_words=emphasis_words,
@@ -203,6 +227,20 @@ class VideoAssembler:
                         scene_duration=scene_duration,
                     )
                     overlay_clips.extend(text_overlays)
+
+                # 6. Burned-in narration subtitles (bottom third)
+                narration = scene.get("narration", "")
+                if self.ENABLE_SUBTITLES and narration:
+                    # Try Whisper first for word-level sync; fall back to
+                    # uniform distribution if no key or API fails.
+                    word_timings = self._whisper_transcribe_words(clip_path)
+                    subtitle_overlays = self._create_subtitle_overlays(
+                        narration=narration,
+                        scene_start=scene_start,
+                        scene_duration=scene_duration,
+                        word_timings=word_timings,
+                    )
+                    overlay_clips.extend(subtitle_overlays)
 
                 scene_start += scene_duration
 
@@ -214,7 +252,7 @@ class VideoAssembler:
             video = concatenate_videoclips(scene_clips, method="compose")
             logger.info("Concatenated video duration: {:.1f}s", video.duration)
 
-            # Mix Sora 2 audio tracks (each already positioned at correct offset)
+            # Mix native audio tracks (each already positioned at correct offset)
             mixed_audio = self._build_audio_mix(audio_tracks, target_duration, nasheed_path)
             if mixed_audio is not None:
                 video = video.with_audio(mixed_audio)
@@ -497,6 +535,8 @@ class VideoAssembler:
         width: int,
         height: int,
         font_size: int = 64,
+        y_center: int | None = None,
+        bg_opacity: float | None = None,
     ) -> np.ndarray:
         """Render a text card as an RGBA numpy array using Pillow.
 
@@ -512,6 +552,13 @@ class VideoAssembler:
             Height of the output image (canvas height).
         font_size : int
             Font size in pixels (64 for normal, 80 for HOOK segment).
+        y_center : int, optional
+            Vertical center for the text block in pixels. Defaults to
+            ``TEXT_Y_CENTER`` (used by headline text); subtitle overlays
+            pass ``SUBTITLE_Y_CENTER`` to position at the bottom third.
+        bg_opacity : float, optional
+            Background rectangle opacity (0.0-1.0). Defaults to
+            ``TEXT_BG_OPACITY``.
 
         Returns
         -------
@@ -520,6 +567,11 @@ class VideoAssembler:
         """
         img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
+
+        if y_center is None:
+            y_center = self.TEXT_Y_CENTER
+        if bg_opacity is None:
+            bg_opacity = self.TEXT_BG_OPACITY
 
         # Load font
         font = self._load_pil_font(font_size)
@@ -547,10 +599,10 @@ class VideoAssembler:
         bg_h = total_text_h + pad_y * 2
 
         bg_x = (width - bg_w) // 2
-        bg_y = self.TEXT_Y_CENTER - bg_h // 2
+        bg_y = y_center - bg_h // 2
 
         # Draw rounded rectangle background
-        bg_alpha = int(255 * self.TEXT_BG_OPACITY)
+        bg_alpha = int(255 * bg_opacity)
         self._draw_rounded_rect(draw, bg_x, bg_y, bg_w, bg_h, self.TEXT_BG_CORNER_RADIUS, bg_alpha)
 
         # Draw each line of text with word-level emphasis coloring
@@ -635,6 +687,201 @@ class VideoAssembler:
         draw.ellipse([x + w - 2 * r, y, x + w, y + 2 * r], fill=fill)
         draw.ellipse([x, y + h - 2 * r, x + 2 * r, y + h], fill=fill)
         draw.ellipse([x + w - 2 * r, y + h - 2 * r, x + w, y + h], fill=fill)
+
+    def _whisper_transcribe_words(self, clip_path: str) -> list[dict] | None:
+        """Transcribe a clip's audio with OpenAI Whisper and return word-level
+        timestamps. Returns None if OPENAI_API_KEY is not set or the API fails
+        — the caller then falls back to uniform subtitle distribution.
+
+        Parameters
+        ----------
+        clip_path : str
+            Local path to the clip (mp4 accepted directly by the API).
+
+        Returns
+        -------
+        list[dict] or None
+            List of ``{"word": str, "start": float, "end": float}`` entries,
+            with times relative to the clip's beginning.
+        """
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            logger.debug(
+                "OPENAI_API_KEY not set — using uniform subtitle timing"
+            )
+            return None
+
+        path = Path(clip_path)
+        if not path.exists():
+            return None
+
+        try:
+            with open(path, "rb") as fh:
+                files = {"file": (path.name, fh, "video/mp4")}
+                data = {
+                    "model": self.WHISPER_MODEL,
+                    "response_format": "verbose_json",
+                    "timestamp_granularities[]": "word",
+                }
+                headers = {"Authorization": f"Bearer {api_key}"}
+                response = requests.post(
+                    self.WHISPER_API_URL,
+                    files=files,
+                    data=data,
+                    headers=headers,
+                    timeout=self.WHISPER_TIMEOUT_SECONDS,
+                )
+                response.raise_for_status()
+
+            body = response.json()
+            words = body.get("words") or []
+            if not words:
+                logger.warning(
+                    "Whisper returned no word timings for {} — "
+                    "falling back to uniform distribution",
+                    path.name,
+                )
+                return None
+
+            logger.info(
+                "Whisper: transcribed {} words from {} (duration={}s, text='{}')",
+                len(words),
+                path.name,
+                body.get("duration"),
+                (body.get("text") or "")[:80],
+            )
+            return words
+        except Exception as exc:
+            logger.warning(
+                "Whisper transcription failed for {}: {} — "
+                "falling back to uniform subtitle timing",
+                path.name, exc,
+            )
+            return None
+
+    def _create_subtitle_overlays(
+        self,
+        narration: str,
+        scene_start: float,
+        scene_duration: float,
+        word_timings: list[dict] | None = None,
+    ) -> list:
+        """Create MoviePy ImageClip subtitle overlays from a scene's narration.
+
+        When ``word_timings`` (from Whisper) is provided, chunks are built
+        from the actual spoken word timestamps so subtitles line up with
+        the synthesized voice. Otherwise, falls back to uniform distribution
+        across the scene duration.
+
+        Chunks are 4 words each and persist until the next chunk appears
+        (karaoke-style hold), so the viewer always has something to read.
+
+        Parameters
+        ----------
+        narration : str
+            The scripted narration text from the scene card.
+        scene_start : float
+            Scene start time on the global timeline (seconds).
+        scene_duration : float
+            Scene duration in seconds.
+        word_timings : list[dict], optional
+            Whisper output: ``[{"word": str, "start": float, "end": float}, ...]``.
+
+        Returns
+        -------
+        list
+            List of MoviePy ImageClip objects.
+        """
+        if not narration or not narration.strip():
+            return []
+
+        chunk_size = self.SUBTITLE_WORDS_PER_CHUNK
+
+        # Build (text, local_start_sec) pairs. local_start_sec is relative
+        # to the clip beginning; we add scene_start when positioning.
+        chunks: list[tuple[str, float]] = []
+
+        if word_timings:
+            # Whisper path — use real speech timing
+            for i in range(0, len(word_timings), chunk_size):
+                group = word_timings[i : i + chunk_size]
+                if not group:
+                    continue
+                text = " ".join(
+                    (w.get("word") or "").strip() for w in group
+                ).strip()
+                if not text:
+                    continue
+                start = float(group[0].get("start") or 0.0)
+                chunks.append((text, start))
+            source = "whisper"
+        else:
+            # Fallback path — uniform distribution
+            words = narration.strip().split()
+            if not words:
+                return []
+            n_chunks = max(1, (len(words) + chunk_size - 1) // chunk_size)
+            chunk_duration = scene_duration / n_chunks
+            for i in range(n_chunks):
+                group = words[i * chunk_size : (i + 1) * chunk_size]
+                if not group:
+                    continue
+                text = " ".join(group)
+                start = i * chunk_duration
+                chunks.append((text, start))
+            source = "uniform"
+
+        if not chunks:
+            return []
+
+        overlays = []
+        max_end = scene_duration - 0.05
+
+        for idx, (text, local_start) in enumerate(chunks):
+            # Hold until the next chunk starts (or end of scene)
+            if idx + 1 < len(chunks):
+                next_start = chunks[idx + 1][1]
+            else:
+                next_start = scene_duration
+
+            local_start = max(0.0, min(local_start, max_end))
+            local_end = min(next_start, max_end)
+            duration = max(local_end - local_start, self.SUBTITLE_MIN_DURATION)
+
+            # Clamp so we don't bleed into the next scene
+            if local_start + duration > scene_duration:
+                duration = max(scene_duration - local_start - 0.05, 0.1)
+
+            rgba_array = self._render_text_card(
+                text_lines=[text],
+                emphasis_words=[],
+                width=self.TARGET_WIDTH,
+                height=self.TARGET_HEIGHT,
+                font_size=self.SUBTITLE_FONT_SIZE,
+                y_center=self.SUBTITLE_Y_CENTER,
+                bg_opacity=self.SUBTITLE_BG_OPACITY,
+            )
+
+            clip = (
+                ImageClip(rgba_array, is_mask=False)
+                .with_duration(duration)
+                .with_start(scene_start + local_start)
+            )
+
+            fade_dur = min(self.SUBTITLE_FADE_IN_DURATION, duration * 0.3)
+            clip = clip.with_effects([FadeIn(fade_dur)])
+
+            overlays.append(clip)
+            logger.debug(
+                "Subtitle [{}] '{}' at scene+{:.2f}s for {:.2f}s",
+                source, text, local_start, duration,
+            )
+
+        logger.info(
+            "Built {} subtitle chunks ({} timing) for scene",
+            len(overlays), source,
+        )
+        return overlays
 
     def _create_text_overlays(
         self,

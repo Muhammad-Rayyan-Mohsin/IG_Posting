@@ -5,7 +5,8 @@ Uses Claude Haiku 4.5 (via Anthropic API) to generate daily Islamic video
 scripts with a 7-day rotating topic cycle, hashtag rotation, and content
 deduplication.
 
-Output format: scene cards (3-5 scenes, 30-42 seconds total).
+Output format: scene cards (3-5 scenes, 30-50 seconds total, 90s ceiling).
+Per-scene durations must be exactly 5 or 10 (Wan 2.5 enum constraint).
 """
 
 from __future__ import annotations
@@ -221,10 +222,14 @@ class ScriptGenerator:
             f"**Category:** {category}\n"
             f"**Date:** {datetime.now().strftime('%A, %B %d, %Y')}\n"
             f"{exclusion_text}\n\n"
-            f"The video must be 30-42 seconds total, composed of 3-5 scenes. "
+            f"The video must be 30-50 seconds total (hard ceiling 90s), composed "
+            f"of 3-5 scenes. **Each scene's duration field MUST be exactly 5 or 10** "
+            f"(Wan 2.5 only supports these two clip lengths). "
             f"Each scene is a self-contained visual moment — no continuous narration. "
             f"Use short, impactful text lines for on-screen display and rich visual "
-            f"prompts for AI video generation.\n\n"
+            f"prompts for AI video generation. Every visual_prompt must include "
+            f"concrete audio cues (wind, water, birds, stone reverb, etc.) in its "
+            f"audio_direction — Wan 2.5 synthesizes native audio from these cues.\n\n"
             f"Respond ONLY with valid JSON in the exact format specified in your "
             f"system instructions. Do not include any text outside the JSON object. "
             f"The JSON must include these top-level fields: "
@@ -288,10 +293,10 @@ class ScriptGenerator:
           - Required top-level fields: title, scene_bible, scenes, caption, sources
           - scene_bible fields: time_of_day, color_anchors (2-3 items), material_palette,
             film_look, ambient_sound_base
-          - scenes: list of 3-5 dicts, each with id, segment, duration (6-12),
+          - scenes: list of 3-5 dicts, each with id, segment, duration (5 or 10),
             text_lines, emphasis_words, visual_prompt, camera, color_palette,
             audio_direction; lighting is optional
-          - Total scene duration: 30-42 seconds
+          - Total scene duration: 30-50 seconds target, 90 seconds hard ceiling
           - sources: list
 
         Args:
@@ -402,7 +407,7 @@ class ScriptGenerator:
             )
 
         required_scene_fields = [
-            "id", "segment", "duration", "text_lines",
+            "id", "segment", "duration", "narration", "text_lines",
             "emphasis_words", "visual_prompt", "camera",
             "color_palette", "audio_direction",
         ]
@@ -427,10 +432,28 @@ class ScriptGenerator:
                 )
 
             duration = scene["duration"]
-            if not isinstance(duration, int) or not (6 <= duration <= 12):
+            if not isinstance(duration, int) or duration not in (5, 10):
                 raise ValueError(
-                    f"scenes[{idx}].duration must be an int between 6 and 12, "
+                    f"scenes[{idx}].duration must be exactly 5 or 10 (Wan 2.5 enum), "
                     f"got {duration!r}"
+                )
+
+            narration = scene.get("narration")
+            if not isinstance(narration, str) or not narration.strip():
+                raise ValueError(
+                    f"scenes[{idx}].narration must be a non-empty string"
+                )
+            # Pace sanity-check: ~2.2 words/sec. 5s scenes: 8-11 words, 10s: 18-22.
+            word_count = len(narration.split())
+            if duration == 5 and not (6 <= word_count <= 13):
+                logger.warning(
+                    "scenes[{}].narration has {} words for a 5s scene — expected 8-11",
+                    idx, word_count,
+                )
+            elif duration == 10 and not (15 <= word_count <= 26):
+                logger.warning(
+                    "scenes[{}].narration has {} words for a 10s scene — expected 18-22",
+                    idx, word_count,
                 )
 
             if not isinstance(scene["text_lines"], list):
@@ -453,9 +476,13 @@ class ScriptGenerator:
 
         # --- Validate total duration ---
         total_duration = sum(scene["duration"] for scene in scenes)
-        if not (30 <= total_duration <= 42):
+        if total_duration > 90:
             raise ValueError(
-                f"Total scene duration must be 30-42 seconds, got {total_duration}s"
+                f"Total scene duration must be ≤90 seconds, got {total_duration}s"
+            )
+        if total_duration < 15:
+            raise ValueError(
+                f"Total scene duration must be at least 15 seconds, got {total_duration}s"
             )
 
         logger.debug(

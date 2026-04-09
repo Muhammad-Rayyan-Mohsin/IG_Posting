@@ -79,6 +79,7 @@ def run_pipeline():
     # ------------------------------------------------------------------
     critical_vars = [
         "ANTHROPIC_API_KEY",
+        "FAL_API_KEY",
         "GOOGLE_SHEETS_CREDENTIALS",
         "GOOGLE_SHEETS_SPREADSHEET_ID",
         "IG_USER_ID",
@@ -101,7 +102,7 @@ def run_pipeline():
         sys.exit(1)
 
     # Optional vars — warn but don't abort
-    optional_vars = ["KIE_API_KEY", "PEXELS_API_KEY"]
+    optional_vars = ["PEXELS_API_KEY", "OPENAI_API_KEY"]
     missing_optional = _check_env_vars(optional_vars)
     if missing_optional:
         logger.warning(
@@ -184,25 +185,45 @@ def run_pipeline():
         # ==============================================================
         logger.info("Step 3/5 — Generating video clips")
         video_gen = VideoGenerator(
-            kie_api_key=os.environ.get("KIE_API_KEY", ""),
+            fal_api_key=os.environ["FAL_API_KEY"],
             pexels_api_key=os.environ.get("PEXELS_API_KEY", ""),
             output_dir=str(output_dir),
         )
 
         scene_bible = script_data.get("scene_bible", {})
         all_clips = video_gen.generate_all_clips(scenes=scenes, scene_bible=scene_bible)
-        logger.info("Video clips ready: {} total", len(all_clips))
+
+        # Drop scenes whose clip failed or was skipped by the 90s cap so the
+        # assembler receives matched-length scenes and clip_paths lists.
+        paired = [(s, c) for s, c in zip(scenes, all_clips) if c]
+        if paired:
+            scenes, all_clips = [list(t) for t in zip(*paired)]
+        else:
+            scenes, all_clips = [], []
+        logger.info("Video clips ready: {} usable (of {} scenes)", len(all_clips), len(script_data.get("scenes", [])))
 
         if not all_clips:
             logger.warning("No clips generated — using fallback prompts from visual library")
             fallback_prompts = video_gen.get_fallback_prompts(count=4)
             all_clips = video_gen.fetch_stock_clips(fallback_prompts)
             logger.info("Fallback produced {} clips", len(all_clips))
+            # Fallback path produces clips without matching scene cards — build
+            # minimal placeholder scenes so the assembler still has 1:1 pairing.
+            scenes = [
+                {
+                    "id": i + 1,
+                    "segment": "CORE",
+                    "duration": 8,
+                    "text_lines": [],
+                    "emphasis_words": [],
+                }
+                for i in range(len(all_clips))
+            ]
 
         if not all_clips:
             raise RuntimeError(
-                "No video clips available — both AI generation and stock footage "
-                "fallback produced zero clips. Check KIE_API_KEY and PEXELS_API_KEY."
+                "No video clips available — both Wan 2.5 generation and stock "
+                "footage fallback produced zero clips. Check FAL_API_KEY and PEXELS_API_KEY."
             )
 
         # ==============================================================
