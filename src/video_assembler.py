@@ -228,19 +228,27 @@ class VideoAssembler:
                     )
                     overlay_clips.extend(text_overlays)
 
-                # 6. Burned-in narration subtitles (bottom third)
+                # 6. Burned-in narration subtitles (bottom third).
+                # Wrapped in try/except so ANY failure in Whisper or subtitle
+                # rendering logs a warning and continues video assembly with
+                # no subtitles — never blocks the final Reel from posting.
                 narration = scene.get("narration", "")
                 if self.ENABLE_SUBTITLES and narration:
-                    # Try Whisper first for word-level sync; fall back to
-                    # uniform distribution if no key or API fails.
-                    word_timings = self._whisper_transcribe_words(clip_path)
-                    subtitle_overlays = self._create_subtitle_overlays(
-                        narration=narration,
-                        scene_start=scene_start,
-                        scene_duration=scene_duration,
-                        word_timings=word_timings,
-                    )
-                    overlay_clips.extend(subtitle_overlays)
+                    try:
+                        word_timings = self._whisper_transcribe_words(clip_path)
+                        subtitle_overlays = self._create_subtitle_overlays(
+                            narration=narration,
+                            scene_start=scene_start,
+                            scene_duration=scene_duration,
+                            word_timings=word_timings,
+                        )
+                        overlay_clips.extend(subtitle_overlays)
+                    except Exception as exc:
+                        logger.warning(
+                            "Scene {} subtitle pipeline failed ({}: {}) — "
+                            "continuing assembly without subtitles for this scene",
+                            idx + 1, type(exc).__name__, exc,
+                        )
 
                 scene_start += scene_duration
 
@@ -800,23 +808,50 @@ class VideoAssembler:
         # Build (text, local_start_sec) pairs. local_start_sec is relative
         # to the clip beginning; we add scene_start when positioning.
         chunks: list[tuple[str, float]] = []
+        source = "uniform"
 
+        # Whisper path — use real speech timing. Wrapped in try/except so any
+        # malformed word entry (missing keys, non-numeric timestamps, unexpected
+        # shapes) falls through cleanly to the uniform-distribution fallback
+        # instead of crashing the entire assembly.
         if word_timings:
-            # Whisper path — use real speech timing
-            for i in range(0, len(word_timings), chunk_size):
-                group = word_timings[i : i + chunk_size]
-                if not group:
-                    continue
-                text = " ".join(
-                    (w.get("word") or "").strip() for w in group
-                ).strip()
-                if not text:
-                    continue
-                start = float(group[0].get("start") or 0.0)
-                chunks.append((text, start))
-            source = "whisper"
-        else:
-            # Fallback path — uniform distribution
+            try:
+                whisper_chunks: list[tuple[str, float]] = []
+                for i in range(0, len(word_timings), chunk_size):
+                    group = word_timings[i : i + chunk_size]
+                    if not group:
+                        continue
+                    text = " ".join(
+                        (w.get("word") or "").strip() for w in group
+                        if isinstance(w, dict)
+                    ).strip()
+                    if not text:
+                        continue
+                    raw_start = group[0].get("start") if isinstance(group[0], dict) else None
+                    try:
+                        start = float(raw_start) if raw_start is not None else 0.0
+                    except (TypeError, ValueError):
+                        start = 0.0
+                    whisper_chunks.append((text, start))
+                if whisper_chunks:
+                    chunks = whisper_chunks
+                    source = "whisper"
+                else:
+                    logger.warning(
+                        "Whisper word_timings yielded zero usable chunks — "
+                        "falling back to uniform distribution"
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to parse Whisper word_timings ({}: {}) — "
+                    "falling back to uniform distribution",
+                    type(exc).__name__, exc,
+                )
+                chunks = []
+
+        # Uniform fallback path — runs when word_timings was None OR the
+        # Whisper path failed above.
+        if not chunks:
             words = narration.strip().split()
             if not words:
                 return []
