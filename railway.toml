@@ -7,5 +7,7 @@ dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "python src/main.py"
-cronSchedule = "0 6 * * 1,4"
+# TEMPORARY: fire at 23:42 UTC tonight for prod smoke test. Will be reverted
+# to "0 6 * * 1,4" (Mon + Thu 06:00 UTC) once the test run completes.
+cronSchedule = "42 23 * * *"
 restartPolicyType = "NEVER"
