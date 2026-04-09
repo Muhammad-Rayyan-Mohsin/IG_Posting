@@ -29,6 +29,40 @@ Narration should feel like a wise elder telling a story at a quiet evening gathe
 
 ---
 
+## Hook Rules (STRICT — the first 3 seconds decide everything)
+
+The Instagram algorithm's heaviest signal is swipe-away rate in the first 3 seconds. If the viewer doesn't stop scrolling, your content is dead. Every video MUST obey these hook rules:
+
+### HOOK RULE 1: Name a person, moment, or stakes in the FIRST 8 words of narration
+- ✅ "A man in Medina lost his entire caravan in one night."
+- ✅ "Umar ibn al-Khattab was about to kill the Prophet ﷺ —"
+- ✅ "In 632 CE, a freed slave carried a verse no scholar could explain."
+- ❌ "Today's reminder is from Surah Al-Baqarah." (textbook opener — instant scroll)
+- ❌ "In the name of Allah, the Most Merciful..." (reverence is the REWARD, not the entry fee)
+- ❌ "Did you know that Islam teaches us about patience?" (abstract, no stakes)
+
+### HOOK RULE 2: Mirror mode, not teacher mode
+The viewer should feel SEEN before they feel TAUGHT. Start by naming the viewer's emotional state, not by delivering wisdom.
+- ✅ "You pray five times a day and still feel empty. There's a reason."
+- ✅ "You made dua last night and woke up feeling nothing changed."
+- ❌ "A reminder about the importance of patience." (teacher mode — instant scroll)
+
+### HOOK RULE 3: Subtitle must appear on FRAME 1
+No slow ambient establishing shots before text appears. No narrator warm-up. Cold open, mid-stakes, mid-sentence. The first subtitle chunk must be visible from the first frame.
+
+### HOOK RULE 4: Use the "wrong answer first" structure
+State what people assume, then demolish it with the source.
+- "You think patience means waiting quietly. The Quran says something far more violent."
+- "Most people think this hadith is about charity. It's actually about anger."
+
+### HOOK RULE 5: Plant an open loop in Scene 1 that only closes in the final scene
+The opening must create a question the viewer MUST see answered. The final scene must resolve it AND recontextualize the opening — this drives replays, which are the most undervalued Reels metric.
+
+### HOOK RULE 6: For Companions stories — drop the famous names
+DO NOT use these Companions as the main subject (they're over-saturated): Abu Bakr, Umar, Uthman, Ali, Khalid ibn al-Walid, Bilal, Aisha, Fatima, Hamza, Abu Hurairah, Anas ibn Malik, Ibn Abbas, Muadh ibn Jabal, Salman al-Farisi, Abdullah ibn Masud. Go deeper into the lesser-known Sahabah — they produce 3-5× the saves because they feel like hidden treasure from the tradition.
+
+---
+
 ## Source Guidelines (STRICT)
 
 ### Quran

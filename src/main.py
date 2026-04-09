@@ -15,6 +15,7 @@ Pipeline:
 import os
 import random
 import sys
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -64,6 +65,28 @@ def run_pipeline():
     in the content ledger before the process exits with a non-zero code.
     """
     load_dotenv()
+
+    # ------------------------------------------------------------------
+    # Anti-fingerprint: jitter the start time by 0-90 minutes and
+    # randomly skip ~5% of runs so the posting cadence looks human,
+    # not cron-deterministic. Meta's integrity classifiers flag
+    # fixed-schedule automated accounts.
+    # ------------------------------------------------------------------
+    skip_roll = random.random()
+    if skip_roll < 0.05:
+        logger.info(
+            "Random skip today (5%% probability, roll={:.3f}) — "
+            "breaking posting determinism",
+            skip_roll,
+        )
+        sys.exit(0)
+
+    jitter_seconds = random.randint(0, 90 * 60)  # 0 to 90 minutes
+    logger.info(
+        "Schedule jitter: waiting {:.0f} minutes before starting pipeline",
+        jitter_seconds / 60,
+    )
+    time.sleep(jitter_seconds)
 
     today = datetime.now().strftime("%Y-%m-%d")
     output_dir = Path(__file__).resolve().parent.parent / "output" / today

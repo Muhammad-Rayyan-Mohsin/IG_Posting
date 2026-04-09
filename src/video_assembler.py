@@ -15,6 +15,7 @@ Uses MoviePy 2.x and FFmpeg for all video/audio processing.
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -80,7 +81,7 @@ class VideoAssembler:
     # Narration subtitles (burned in from scene.narration)
     ENABLE_SUBTITLES = True
     SUBTITLE_FONT_SIZE = 52
-    SUBTITLE_Y_CENTER = 1500               # bottom third, clear of IG UI (bottom ~250px)
+    SUBTITLE_Y_CENTER = 1300               # above IG UI chrome (bottom 30-35% is overlaid)
     SUBTITLE_BG_OPACITY = 0.75             # slightly more opaque than text cards
     SUBTITLE_WORDS_PER_CHUNK = 4           # TikTok/Reels auto-caption style
     SUBTITLE_MIN_DURATION = 0.6            # never flash a chunk faster than this
@@ -94,9 +95,17 @@ class VideoAssembler:
     WHISPER_TIMEOUT_SECONDS = 60
 
     # Audio mixing — Wan 2.5 native audio is the primary soundscape.
+    # Ambient is ducked to avoid fighting the narration voice (200-800Hz overlap).
     # Nasheed is kept as a gentle underlay for spiritual continuity.
-    SORA_AUDIO_VOLUME = 0.90   # Wan 2.5 native clip audio at 90%
+    SORA_AUDIO_VOLUME = 0.88   # Wan 2.5 clip audio (loudnorm handles level; slight duck for nasheed headroom)
     NASHEED_VOLUME = 0.12       # optional nasheed underlay at 12%
+
+    # Audio normalization — normalize each clip to broadcast loudness before
+    # assembly so voice levels stay consistent across independently-generated scenes.
+    ENABLE_AUDIO_NORMALIZATION = True
+    LOUDNORM_TARGET_LUFS = -16
+    LOUDNORM_TRUE_PEAK = -1.5
+    LOUDNORM_LRA = 11
 
     # Export settings
     EXPORT_CODEC = "libx264"
@@ -324,6 +333,12 @@ class VideoAssembler:
         if not p.exists():
             raise FileNotFoundError(f"Clip not found: {clip_path}")
 
+        # Normalize audio loudness before loading into MoviePy
+        if self.ENABLE_AUDIO_NORMALIZATION:
+            normalized_path = self._normalize_clip_audio(str(p))
+            if normalized_path:
+                p = Path(normalized_path)
+
         try:
             clip = VideoFileClip(str(p))
             logger.debug(
@@ -336,6 +351,51 @@ class VideoAssembler:
             return clip
         except Exception as exc:
             raise RuntimeError(f"Failed to load clip {clip_path}: {exc}") from exc
+
+    def _normalize_clip_audio(self, clip_path: str) -> str | None:
+        """Run ffmpeg loudnorm on a clip to normalize voice levels.
+
+        Returns the path to the normalized file, or None on failure (the
+        caller falls back to the unnormalized original). Uses single-pass
+        loudnorm which is fast and good enough for short Reels clips.
+        """
+        p = Path(clip_path)
+        normalized = p.with_stem(p.stem + "_norm")
+        if normalized.exists():
+            logger.debug("Using existing normalized clip: {}", normalized.name)
+            return str(normalized)
+
+        af = (
+            f"loudnorm=I={self.LOUDNORM_TARGET_LUFS}"
+            f":TP={self.LOUDNORM_TRUE_PEAK}"
+            f":LRA={self.LOUDNORM_LRA}"
+        )
+        cmd = [
+            "ffmpeg", "-i", str(p), "-y",
+            "-af", af,
+            "-c:v", "copy",      # don't re-encode video
+            "-c:a", "aac",       # re-encode audio as AAC
+            "-b:a", "128k",
+            str(normalized),
+        ]
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode != 0:
+                logger.warning(
+                    "ffmpeg loudnorm failed for {} (rc={}): {}",
+                    p.name, result.returncode, result.stderr[:300],
+                )
+                return None
+            logger.info(
+                "Normalized audio: {} → {} (target {}dB LUFS)",
+                p.name, normalized.name, self.LOUDNORM_TARGET_LUFS,
+            )
+            return str(normalized)
+        except Exception as exc:
+            logger.warning("Audio normalization failed for {}: {}", p.name, exc)
+            return None
 
     def _resize_clip(self, clip, target_size: tuple[int, int] | None = None):
         """Resize and crop a clip to fill the target 9:16 frame.
