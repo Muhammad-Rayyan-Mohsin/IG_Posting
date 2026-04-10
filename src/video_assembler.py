@@ -5,7 +5,7 @@ Assembles the final Instagram Reel from scene-card-driven AI-generated clips.
 
 Architecture: scene-card-driven (not voiceover-driven).
 - Duration is determined by the sum of scene card durations.
-- Each clip's native Wan 2.5 audio is the primary soundscape (90% volume).
+- Each clip's native audio (from Wan 2.5) is the primary soundscape (90% volume).
 - Text overlays are rendered via Pillow (not MoviePy TextClip).
 - Optional nasheed mixed at 12% underlay.
 
@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import requests
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
 from moviepy import (
@@ -97,7 +96,7 @@ class VideoAssembler:
     # Audio mixing — Wan 2.5 native audio is the primary soundscape.
     # Ambient is ducked to avoid fighting the narration voice (200-800Hz overlap).
     # Nasheed is kept as a gentle underlay for spiritual continuity.
-    SORA_AUDIO_VOLUME = 0.88   # Wan 2.5 clip audio (loudnorm handles level; slight duck for nasheed headroom)
+    CLIP_AUDIO_VOLUME = 0.88   # Wan 2.5 clip audio (loudnorm handles level; slight duck for nasheed headroom)
     NASHEED_VOLUME = 0.12       # optional nasheed underlay at 12%
 
     # Audio normalization — normalize each clip to broadcast loudness before
@@ -206,7 +205,7 @@ class VideoAssembler:
 
                 # 3. Extract clip audio at 90% volume (Wan 2.5 native soundscape)
                 if clip.audio is not None:
-                    scene_audio = clip.audio.with_volume_scaled(self.SORA_AUDIO_VOLUME)
+                    scene_audio = clip.audio.with_volume_scaled(self.CLIP_AUDIO_VOLUME)
                     # Position audio at the correct timeline offset
                     scene_audio = scene_audio.with_start(scene_start)
                     audio_tracks.append(scene_audio)
@@ -304,6 +303,13 @@ class VideoAssembler:
                 c for c in [mixed_audio, final] if c is not None
             ]
             self._close_clips(all_to_close)
+            # Clean up loudnorm temp files
+            clips_dir = self.output_dir / "clips"
+            for norm_file in (clips_dir.glob("*_norm.mp4") if clips_dir.exists() else []):
+                try:
+                    norm_file.unlink()
+                except OSError:
+                    pass
 
     # ------------------------------------------------------------------
     # Clip loading & resizing
@@ -541,7 +547,7 @@ class VideoAssembler:
         total_duration: float,
         nasheed_path: str | None = None,
     ):
-        """Build the final audio mix from per-scene Sora 2 tracks and optional nasheed.
+        """Build the final audio mix from per-scene clip audio tracks and optional nasheed.
 
         Parameters
         ----------
@@ -586,7 +592,7 @@ class VideoAssembler:
 
         mixed = CompositeAudioClip(tracks)
         logger.info(
-            "Audio mixed — {} Sora 2 scene tracks + {} nasheed track(s)",
+            "Audio mixed — {} clip audio tracks + {} nasheed track(s)",
             len(scene_audio_tracks),
             1 if has_nasheed else 0,
         )

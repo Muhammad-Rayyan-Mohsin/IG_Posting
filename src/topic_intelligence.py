@@ -20,7 +20,7 @@ advisory — Claude decides whether to use it.
 from __future__ import annotations
 
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 from loguru import logger
@@ -237,7 +237,7 @@ def build_trending_context() -> str:
         logger.info("No trending data available — pipeline will use normal category rotation")
         return ""
 
-    today = datetime.now().strftime("%A, %B %d, %Y")
+    today = datetime.now(timezone.utc).strftime("%A, %B %d, %Y")
     header = (
         f"=== TRENDING CONTEXT ({today}) ===\n"
         f"The following signals show what people are currently interested "

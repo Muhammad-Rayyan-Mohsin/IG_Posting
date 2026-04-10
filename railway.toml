@@ -1,5 +1,5 @@
 # Railway deployment config — ig-posting-pipeline service
-# Cron runs twice per week (Mon + Thu 06:00 UTC) matching Render schedule.
+# Cron runs twice per week (Mon & Thu 15:00 UTC (evening in Middle East/South Asia, peak Islamic engagement))
 
 [build]
 builder = "DOCKERFILE"
@@ -7,5 +7,5 @@ dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "python src/main.py"
-cronSchedule = "0 6 * * 1,4"
+cronSchedule = "0 15 * * 1,4"
 restartPolicyType = "NEVER"

@@ -33,6 +33,7 @@ HEADERS = [
     "Status",
     "Error",
     "Created At",
+    "Duration (min)",
 ]
 
 
@@ -301,6 +302,7 @@ class ContentLedger:
             "generated",
             "",  # Error — empty for now
             created_at,
+            "",  # Duration (min) — filled later
         ]
 
         self.worksheet.append_row(new_row, value_input_option="USER_ENTERED")
@@ -349,20 +351,49 @@ class ContentLedger:
             "Error": 10,
         }
 
-        # Always update status
-        self.worksheet.update_cell(row, col_map["Status"], status)
-        logger.info("Row {} status updated to '{}'", row, status)
-
         kwarg_to_col = {
             "video_url": "Video URL",
             "instagram_post_id": "Instagram Post ID",
             "error_message": "Error",
         }
 
+        # Build a single batch update: collect all (col_index, value) pairs
+        # starting with Status, then any provided kwargs.
+        updates: list[tuple[int, str]] = [(col_map["Status"], status)]
         for kwarg_key, col_name in kwarg_to_col.items():
             if kwarg_key in kwargs and kwargs[kwarg_key] is not None:
-                self.worksheet.update_cell(row, col_map[col_name], str(kwargs[kwarg_key]))
-                logger.info("Row {} '{}' set to '{}'", row, col_name, kwargs[kwarg_key])
+                updates.append((col_map[col_name], str(kwargs[kwarg_key])))
+
+        # Sort by column index so the range arithmetic is straightforward.
+        updates.sort(key=lambda x: x[0])
+
+        if updates:
+            min_col = updates[0][0]
+            max_col = updates[-1][0]
+            # Build a single row of values spanning min_col..max_col,
+            # leaving unchanged columns as empty strings.
+            row_values = [""] * (max_col - min_col + 1)
+            for col_idx, value in updates:
+                row_values[col_idx - min_col] = value
+
+            # Convert column index to letter (A=1, G=7, H=8, I=9, J=10)
+            def col_letter(n: int) -> str:
+                result = ""
+                while n > 0:
+                    n, remainder = divmod(n - 1, 26)
+                    result = chr(65 + remainder) + result
+                return result
+
+            range_notation = (
+                f"{col_letter(min_col)}{row}:{col_letter(max_col)}{row}"
+            )
+            self.worksheet.update(range_notation, [row_values])
+            logger.info(
+                "Row {} batch-updated {} — status='{}'",
+                row,
+                range_notation,
+                status,
+            )
 
         self._invalidate_cache()
 

@@ -82,6 +82,43 @@ class InstagramPoster:
         )
 
     # ------------------------------------------------------------------
+    # Instagram token validation
+    # ------------------------------------------------------------------
+
+    def validate_token(self) -> None:
+        """Validate the Instagram access token by calling the /me endpoint.
+
+        Raises
+        ------
+        RuntimeError
+            If the token is invalid or the API returns an error.
+        """
+        url = f"{IG_API_BASE}/me"
+        params = {
+            "fields": "id",
+            "access_token": self.ig_access_token,
+        }
+        logger.info("Validating Instagram access token...")
+        try:
+            response = requests.get(url, params=params, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                f"Instagram token validation request failed: {exc}"
+            ) from exc
+
+        if "error" in data:
+            error_msg = data["error"].get("message", "Unknown error")
+            raise RuntimeError(
+                f"Instagram access token is invalid or expired: {error_msg}"
+            )
+
+        logger.info(
+            "Instagram token valid — account ID: {}", data.get("id", "unknown")
+        )
+
+    # ------------------------------------------------------------------
     # Cloudflare R2 upload
     # ------------------------------------------------------------------
 
@@ -333,8 +370,12 @@ class InstagramPoster:
             "video_url": None,
             "container_id": None,
             "post_id": None,
+            "permalink": None,
             "status": "failed",
         }
+
+        # Pre-flight: validate the Instagram token before spending time on R2 upload
+        self.validate_token()
 
         # Step 1: Upload to R2
         logger.info("Step 1/4 — Uploading video to Cloudflare R2")
@@ -358,6 +399,22 @@ class InstagramPoster:
         post_id = self.publish(container_id)
         result["post_id"] = post_id
         result["status"] = "posted"
+
+        # Fetch the permalink for the published Reel
+        try:
+            permalink_url = (
+                f"{IG_API_BASE}/{post_id}"
+                f"?fields=permalink&access_token={self.ig_access_token}"
+            )
+            permalink_resp = requests.get(permalink_url, timeout=15)
+            permalink_resp.raise_for_status()
+            permalink_data = permalink_resp.json()
+            permalink = permalink_data.get("permalink", "")
+            result["permalink"] = permalink
+            if permalink:
+                logger.info("Reel permalink: {}", permalink)
+        except Exception as exc:
+            logger.warning("Could not fetch Reel permalink: {}", exc)
 
         logger.info(
             "Reel posted successfully — Post ID: {}, Video URL: {}",

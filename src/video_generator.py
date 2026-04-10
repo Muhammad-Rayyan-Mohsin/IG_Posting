@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import fal_client
@@ -136,8 +137,12 @@ class VideoGenerator:
         scene_bible = scene_bible or {}
         logger.info("Generating {} Wan 2.5 clips (90s cap)", len(scenes))
 
-        clip_paths: list[str] = []
+        # --- Phase 1: Precompute which scenes fit under the 90s cap ---
+        # Determine the subset of scenes to generate before dispatching any
+        # parallel work so we never overshoot MAX_TOTAL_DURATION.
+        accepted: list[tuple[int, dict, int, str]] = []  # (1-based idx, scene, duration, prompt)
         total_duration = 0.0
+        dropped_from = len(scenes) + 1  # index of first dropped scene (1-based)
 
         for idx, scene in enumerate(scenes, start=1):
             snapped_duration = self._snap_duration(scene.get("duration"))
@@ -149,41 +154,72 @@ class VideoGenerator:
                     idx, len(scenes), self.MAX_TOTAL_DURATION,
                     total_duration, snapped_duration,
                 )
-                clip_paths.extend([""] * (len(scenes) - idx + 1))
+                dropped_from = idx
                 break
 
             prompt = self._build_prompt(scene, scene_bible)
             if not prompt:
                 logger.warning("Scene {}/{} has empty visual_prompt — skipping", idx, len(scenes))
-                clip_paths.append("")
+                # Placeholder empty — counted as a gap scene, no duration added
+                accepted.append((idx, scene, snapped_duration, ""))
                 continue
 
-            output_path = str(self.clips_dir / f"scene_clip_{idx:02d}.mp4")
+            accepted.append((idx, scene, snapped_duration, prompt))
+            total_duration += snapped_duration
 
-            try:
-                clip_path = self._generate_wan25_clip(
+        # --- Phase 2: Dispatch all clips in parallel ---
+        # futures map: future -> (idx, scene, snapped_duration)
+        future_to_meta: dict = {}
+        gap_indices: set[int] = set()  # 1-based indices with empty prompts
+
+        with ThreadPoolExecutor(max_workers=max(len(accepted), 1)) as executor:
+            for idx, scene, snapped_duration, prompt in accepted:
+                if not prompt:
+                    gap_indices.add(idx)
+                    continue
+                output_path = str(self.clips_dir / f"scene_clip_{idx:02d}.mp4")
+                future = executor.submit(
+                    self._generate_wan25_clip,
                     prompt=prompt,
                     duration_sec=snapped_duration,
                     output_path=output_path,
                     scene_idx=idx,
                 )
-                clip_paths.append(clip_path)
-                total_duration += snapped_duration
-                logger.success(
-                    "Scene {}/{} clip ready ({:.0f}s) — running total: {:.0f}s / {}s",
-                    idx, len(scenes), snapped_duration, total_duration, self.MAX_TOTAL_DURATION,
-                )
-            except Exception as exc:
-                logger.error(
-                    "Wan 2.5 failed for scene {}/{}: {} — attempting Pexels fallback",
-                    idx, len(scenes), exc,
-                )
-                fallback = self._pexels_fallback_for_scene(scene, idx)
-                if fallback:
-                    clip_paths.append(fallback)
-                    total_duration += snapped_duration
-                else:
-                    clip_paths.append("")
+                future_to_meta[future] = (idx, scene, snapped_duration)
+
+            # Collect results as they complete; Pexels fallback happens here
+            # (in the main thread, after each future resolves) so fallback HTTP
+            # calls don't pile up inside the executor.
+            results: dict[int, str] = {}  # 1-based idx -> clip path or ""
+
+            for future in as_completed(future_to_meta):
+                idx, scene, snapped_duration = future_to_meta[future]
+                try:
+                    clip_path = future.result()
+                    results[idx] = clip_path
+                    logger.success(
+                        "Scene {}/{} clip ready ({:.0f}s)",
+                        idx, len(scenes), snapped_duration,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Wan 2.5 failed for scene {}/{}: {} — attempting Pexels fallback",
+                        idx, len(scenes), exc,
+                    )
+                    fallback = self._pexels_fallback_for_scene(scene, idx)
+                    results[idx] = fallback if fallback else ""
+
+        # --- Phase 3: Assemble ordered clip_paths list ---
+        clip_paths: list[str] = []
+        for idx, scene, snapped_duration, prompt in accepted:
+            if idx in gap_indices:
+                clip_paths.append("")
+            else:
+                clip_paths.append(results.get(idx, ""))
+
+        # Append empty placeholders for scenes dropped by the 90s cap
+        if dropped_from <= len(scenes):
+            clip_paths.extend([""] * (len(scenes) - dropped_from + 1))
 
         successful = [p for p in clip_paths if p]
         logger.info(
@@ -336,7 +372,7 @@ class VideoGenerator:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=2, min=5, max=60),
-        retry=retry_if_exception_type((requests.RequestException, ConnectionError, TimeoutError)),
+        retry=retry_if_exception_type(Exception),
         before_sleep=lambda rs: logger.warning(
             "Retrying Wan 2.5 generation (attempt {}) after: {}",
             rs.attempt_number, rs.outcome.exception(),

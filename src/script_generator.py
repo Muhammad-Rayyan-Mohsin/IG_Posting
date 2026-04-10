@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -129,15 +129,22 @@ class ScriptGenerator:
 
     def get_todays_category(self) -> str:
         """
-        Get today's content category based on the day of the week.
+        Get today's content category based on the day of year.
 
         Returns:
-            The category string for today (e.g. "Quran Verses" on Monday).
+            The category string for today, rotating through all categories
+            by day-of-year so every category gets used regardless of which
+            weekdays the cron fires on.
         """
-        weekday = datetime.now().weekday()  # Monday=0, Sunday=6
-        category = self.CATEGORY_SCHEDULE[weekday]
+        now = datetime.now(timezone.utc)
+        categories = list(self.CATEGORY_SCHEDULE.values())
+        # Rotate through all categories by day-of-year, so every category
+        # gets used regardless of which weekdays the cron fires on.
+        idx = now.timetuple().tm_yday % len(categories)
+        category = categories[idx]
         logger.info(
-            "Today is {} -> category: {}", datetime.now().strftime('%A'), category
+            "Today is {} (day {}) -> category: {}",
+            now.strftime('%A'), now.timetuple().tm_yday, category,
         )
         return category
 
@@ -215,6 +222,10 @@ class ScriptGenerator:
         """
         category = self.get_todays_category()
         used_references = used_references or []
+
+        # Cap exclusion list to avoid prompt bloat (after ~1 year, list grows to 300+ refs)
+        if len(used_references) > 60:
+            used_references = used_references[-60:]
 
         # Build the user prompt
         exclusion_text = ""
@@ -464,18 +475,31 @@ class ScriptGenerator:
                 raise ValueError(
                     f"scenes[{idx}].narration must be a non-empty string"
                 )
-            # Pace sanity-check: ~2.2 words/sec. 5s scenes: 8-11 words, 10s: 18-22.
+            # Pace sanity-check: ~2.2 words/sec. 5s scenes: target 8-11 words, 10s: 18-22.
+            # Hard-reject if more than 30% outside the target range.
             word_count = len(narration.split())
-            if duration == 5 and not (6 <= word_count <= 13):
-                logger.warning(
-                    "scenes[{}].narration has {} words for a 5s scene — expected 8-11",
-                    idx, word_count,
-                )
-            elif duration == 10 and not (15 <= word_count <= 26):
-                logger.warning(
-                    "scenes[{}].narration has {} words for a 10s scene — expected 18-22",
-                    idx, word_count,
-                )
+            if duration == 5:
+                if word_count > 14 or word_count < 5:
+                    raise ValueError(
+                        f"scenes[{idx}].narration has {word_count} words for a 5s scene "
+                        f"— must be 5-14 (target 8-11). Narration: {narration!r}"
+                    )
+                elif not (8 <= word_count <= 11):
+                    logger.warning(
+                        "scenes[{}].narration has {} words for a 5s scene — expected 8-11",
+                        idx, word_count,
+                    )
+            elif duration == 10:
+                if word_count > 28 or word_count < 13:
+                    raise ValueError(
+                        f"scenes[{idx}].narration has {word_count} words for a 10s scene "
+                        f"— must be 13-28 (target 18-22). Narration: {narration!r}"
+                    )
+                elif not (18 <= word_count <= 22):
+                    logger.warning(
+                        "scenes[{}].narration has {} words for a 10s scene — expected 18-22",
+                        idx, word_count,
+                    )
 
             if not isinstance(scene["text_lines"], list):
                 raise ValueError(f"scenes[{idx}].text_lines must be a list")

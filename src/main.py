@@ -7,7 +7,7 @@ and posts it as an Instagram Reel.
 Pipeline:
     1. Initialize content ledger  (Google Sheets deduplication guard)
     2. Generate script             (Claude — scene cards format)
-    3. Generate video clips        (Sora 2 per scene via KIE AI)
+    3. Generate video clips        (Wan 2.5 per scene via fal.ai)
     4. Assemble final video        (scene-card driven, nasheed audio)
     5. Post to Instagram           (Graph API via Cloudflare R2)
 """
@@ -17,7 +17,7 @@ import random
 import sys
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -93,7 +93,7 @@ def run_pipeline():
     else:
         logger.info("SKIP_JITTER set — bypassing schedule jitter for local testing")
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     output_dir = Path(__file__).resolve().parent.parent / "output" / today
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -130,7 +130,7 @@ def run_pipeline():
         sys.exit(1)
 
     # Optional vars — warn but don't abort
-    optional_vars = ["PEXELS_API_KEY", "OPENAI_API_KEY"]
+    optional_vars = ["PEXELS_API_KEY", "OPENAI_API_KEY", "FAILURE_WEBHOOK_URL"]
     missing_optional = _check_env_vars(optional_vars)
     if missing_optional:
         logger.warning(
@@ -166,6 +166,17 @@ def run_pipeline():
         if already_posted:
             logger.info(
                 "Content for {} was already posted — exiting cleanly (Railway restart guard)",
+                today,
+            )
+            sys.exit(0)
+
+        already_in_progress = any(
+            r.get("Date") == today and r.get("Status") in ("generated", "assembled")
+            for r in recent
+        )
+        if already_in_progress:
+            logger.info(
+                "Another run for {} appears to be in progress — exiting to prevent duplicate",
                 today,
             )
             sys.exit(0)
@@ -227,7 +238,7 @@ def run_pipeline():
         logger.info("Ledger entry created at row {}", ledger_row)
 
         # ==============================================================
-        # Step 3: Generate video clips (one per scene via Sora 2)
+        # Step 3: Generate video clips (Wan 2.5 per scene via fal.ai)
         # ==============================================================
         logger.info("Step 3/5 — Generating video clips")
         video_gen = VideoGenerator(
@@ -327,7 +338,13 @@ def run_pipeline():
                 "Caption length {} exceeds Instagram's 2200-char limit — truncating",
                 len(full_caption),
             )
-            full_caption = full_caption[:2197] + "..."
+            # Truncate the caption body, not the hashtags
+            hashtag_block = "\n\n" + " ".join(hashtags) if hashtags else ""
+            max_body = 2200 - len(hashtag_block) - 3  # 3 for "..."
+            if max_body > 0:
+                full_caption = caption[:max_body] + "..." + hashtag_block
+            else:
+                full_caption = caption[:2197] + "..."
 
         result = poster.post_reel(
             video_path=final_video,
@@ -336,10 +353,14 @@ def run_pipeline():
 
         if result["status"] == "posted":
             logger.info("Posted to Instagram! Post ID: {}", result.get("post_id"))
+            # Prefer the IG permalink as the "Video URL" in the ledger —
+            # it's the shareable link. Fall back to R2 URL if permalink
+            # fetch failed (e.g., API returned None).
+            video_link = result.get("permalink") or result.get("video_url", "")
             ledger.update_status(
                 ledger_row,
                 "posted",
-                video_url=result.get("video_url", ""),
+                video_url=video_link,
                 instagram_post_id=result.get("post_id", ""),
             )
         else:
@@ -389,8 +410,18 @@ def run_pipeline():
         sys.exit(1)
 
     finally:
-        # Keep all output files for debugging; cleanup can be added later
-        pass
+        # Clean up output directories older than 7 days
+        try:
+            import shutil
+            output_base = Path(__file__).resolve().parent.parent / "output"
+            if output_base.exists():
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+                for d in sorted(output_base.iterdir()):
+                    if d.is_dir() and d.name < cutoff and d.name[:4].isdigit():
+                        shutil.rmtree(d, ignore_errors=True)
+                        logger.info("Cleaned up old output: {}", d.name)
+        except Exception as cleanup_exc:
+            logger.debug("Output cleanup failed: {}", cleanup_exc)
 
 
 if __name__ == "__main__":
