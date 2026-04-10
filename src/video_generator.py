@@ -290,6 +290,7 @@ class VideoGenerator:
         deliberately avoided around the narration text for the same reason.
         """
         film_look = scene_bible.get("film_look", "")
+        color_grade = scene_bible.get("color_grade", "")
         ambient_base = scene_bible.get("ambient_sound_base", "")
 
         visual = (scene.get("visual_prompt") or "").strip()
@@ -300,6 +301,8 @@ class VideoGenerator:
         visual_parts: list[str] = []
         if film_look and film_look.lower() not in visual.lower():
             visual_parts.append(film_look.strip(". "))
+        if color_grade and color_grade.lower() not in visual.lower():
+            visual_parts.append(color_grade.strip(". "))
         if visual:
             visual_parts.append(visual.strip(". "))
         visual_str = ". ".join(p for p in visual_parts if p)
@@ -564,8 +567,9 @@ if __name__ == "__main__":
     )
 
     sample_scene_bible = {
-        "film_look": "35mm Kodak 5219 with natural grain, anamorphic 2.0x",
+        "film_look": "35mm Kodak 5219 with natural grain, anamorphic 2.0x, shallow depth of field",
         "color_anchors": ["warm amber", "cream", "deep indigo"],
+        "color_grade": "warm Kodak Portra tones with lifted shadows",
         "ambient_sound_base": "gentle desert wind with distant birdsong",
     }
     sample_scenes = [
@@ -578,11 +582,13 @@ if __name__ == "__main__":
             ),
             "visual_prompt": (
                 "A single brass oil lamp flickering on an ancient stone ledge "
-                "inside a vast domed hall, shafts of warm golden sunlight piercing "
-                "through narrow arched windows above, illuminating slow dust "
-                "particles drifting in the still air. Slow dolly forward, 35mm lens. "
-                "Rich amber highlights on weathered sandstone walls, deep shadow "
-                "pooling beneath the carved archways."
+                "inside a vast domed hall, flame dancing and casting warm "
+                "shadows that shift across weathered sandstone walls. Dust motes "
+                "drift slowly through shafts of golden sunlight piercing narrow "
+                "arched windows above. Slow dolly forward, 35mm lens, anamorphic "
+                "bokeh. Warm Kodak Portra tones, cinematic film grain, photoreal "
+                "4K detail. Light gradually intensifies as camera approaches, "
+                "deepening the amber glow across carved stone."
             ),
             "audio_direction": (
                 "large stone domed interior with long natural reverb, soft crackle "

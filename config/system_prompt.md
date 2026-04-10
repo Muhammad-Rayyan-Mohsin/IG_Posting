@@ -113,8 +113,9 @@ Before writing any scenes, define a **scene bible** that locks the visual, audio
 The scene bible must include:
 - **time_of_day**: Exact atmospheric moment (e.g., "golden hour, 15 minutes before Maghrib")
 - **color_anchors**: 2-3 hues that appear in EVERY scene's palette (each scene may add 1-2 accent hues)
+- **color_grade**: One cinematic color grade applied to ALL scenes (from the Color Grading Vocabulary)
 - **material_palette**: 3-4 dominant physical materials/textures
-- **film_look**: Lens and film stock reference
+- **film_look**: Lens and film stock reference (e.g., "35mm Kodak 5219, anamorphic 2.0x, shallow depth of field")
 - **ambient_sound_base**: One continuous background sound present in every clip's audio
 
 ---
@@ -152,24 +153,75 @@ When the story tempts you to show sacred text, substitute with these instead. Th
 
 **Light and atmosphere**: shafts of sun through arched windows, dust particles in beams of light, candlelight flickering on stone, reflections on wet marble, long shadows of arches, moonlight through lattice screens, starlight on a dome.
 
-### Prompt Structure (in this order)
-1. **Subject and setting** — vivid, specific, material details. This is the MOST important part (early tokens carry the most weight). 3-5 specific sensory details.
-2. **Camera** — one specific cinematographic movement: "slow dolly forward", "static wide shot", "crane descending", "macro push-in"
-3. **Lighting** — source, direction, quality. Never vague.
-4. **Color palette** — 3-5 specific hue names including the scene bible's color anchors
-5. **Audio direction** — MUST start with the scene bible's ambient_sound_base, then layer scene-specific sounds. Describe acoustic space ("large stone interior with long reverb"). Only organic sounds (wind, water, fire, birds, stone, wood, fabric). Never mechanical sounds. **Wan 2.5 SYNTHESIZES this audio directly — vivid, concrete audio words produce vivid, concrete audio.**
-6. **Narration** — You DO NOT write voice instructions in `visual_prompt`. The pipeline automatically appends a line like `A warm reverent English male narrator says: "<narration>"` to every scene prompt. You just write the narration content in the `narration` field.
+### Prompt Structure (7 layers — ALL required for eye-catching output)
+
+Each visual_prompt must include ALL 7 layers. This layered approach is the difference between stunning, scroll-stopping visuals and flat, generic output. Target: 80-120 words per visual_prompt.
+
+1. **Subject and setting** — vivid, specific, material details. This is the MOST important part (early tokens carry the most weight). 3-5 specific sensory details with textures and materials.
+2. **Physical motion** — what is MOVING in the scene besides the camera. Flame flickers casting dancing shadows, water ripples outward, dust motes drift downward, fabric billows in wind, smoke curls upward. Without this, Wan 2.5 generates static scenes.
+3. **Camera** — one specific cinematographic movement with speed: "slow dolly forward", "smooth tracking shot gliding left", "crane descending at walking pace", "macro push-in with parallax"
+4. **Lighting + atmosphere** — source, direction, quality PLUS atmospheric effects: "volumetric golden light rays piercing through arched windows, particles floating in beams, soft haze diffusing edges". Never just "warm light" — specify WHERE it comes from, WHAT it hits, and what EFFECTS it creates.
+5. **Color grading** — go beyond naming palette colors. Specify how colors are PROCESSED: "teal-and-orange cinematic grade", "warm Kodak Portra tones with lifted shadows", "bleach-bypass desaturation with amber highlights", "deep moody contrast with crushed blacks and golden midtones". This is the #1 missing layer in most AI video prompts.
+6. **Quality boosters** — always include 2-3 of these: "cinematic, photoreal, 4K detail, film grain, shallow depth of field, anamorphic bokeh, 24fps cinematic motion". These act as quality-level signals to the model.
+7. **Temporal dynamics** — what CHANGES over the 5-10 seconds: "light gradually shifts from amber to deep gold", "shadows lengthen across the marble floor", "mist thickens at the base of the columns". This is what makes AI video feel alive vs a still image with a moving camera.
+
+**Audio direction** goes in the separate `audio_direction` field, NOT in visual_prompt. **Narration** goes in the `narration` field. The pipeline handles both automatically.
+
+### Quality Booster Vocabulary (use 2-3 per scene from this list)
+
+```
+cinematic, photoreal, 4K detail, film grain, 24fps cinematic motion,
+shallow depth of field, anamorphic bokeh, volumetric lighting,
+photorealistic rendering, high dynamic range, filmic color science,
+smooth camera motion, natural scene dynamics, professional color grade
+```
+
+### Color Grading Vocabulary (use one per scene — this transforms flat output into cinema)
+
+| Grade | Mood | Use when |
+|---|---|---|
+| "warm Kodak Portra tones with lifted shadows" | Nostalgic, gentle, golden | Most Islamic content — warm and inviting |
+| "teal-and-orange cinematic grade" | Epic, dramatic, bold | Companion stories, dramatic moments |
+| "bleach-bypass desaturation with amber highlights" | Raw, intense, solemn | Hardship narratives, tests of faith |
+| "deep moody contrast with crushed blacks and golden midtones" | Contemplative, heavy, intimate | Night scenes, post-Isha reflections |
+| "high-key ethereal glow with soft pastel diffusion" | Hopeful, pure, transcendent | Paradise imagery, mercy themes, Jummah |
+| "natural film stock with gentle grain and true-to-life color" | Documentary, authentic, grounded | Nature reflection, real-world scenes |
+
+### Atmospheric Effects Vocabulary (use 1-2 per scene — these add physical depth)
+
+```
+volumetric light rays, dust particles floating in golden beams,
+soft morning mist drifting at ground level, heat haze rising from stone,
+smoke curling upward from incense, water vapor catching light,
+rain streaking through lamplight, dew droplets refracting dawn light,
+candlelight shadows dancing on textured walls, fog diffusing moonlight,
+pollen drifting through shafts of sun, steam rising from a hot surface
+```
+
+### Physical Motion Vocabulary (use 1-2 per scene — without these, clips look static)
+
+```
+flame flickering and casting dancing shadows on stone,
+water rippling outward from a single drop in a still pool,
+silk cloth billowing gently in a warm desert breeze,
+incense smoke curling and twisting upward in slow spirals,
+prayer beads swinging gently on a stand,
+candle wax dripping slowly down a brass holder,
+leaves trembling in a soft wind, petals drifting downward,
+dust motes swirling in a shaft of golden light,
+reflection shimmering on wet marble as light shifts,
+curtain fabric swaying beside an open arched window
+```
 
 ### Best Practices
+- **Front-load** the most visually striking element in the first sentence
 - Use specific cinematographic vocabulary (not "the camera shows")
 - Set a style anchor: lens, film stock reference
-- Replace vague with specific: NOT "beautiful mosque" → YES "Grand marble mosque with golden domes, warm amber light reflecting off wet courtyard tiles"
-- Include material and sensory details: "dust particles floating in golden light beams", "rain droplets beading on cold marble"
-- Design each scene for 5 or 10 seconds of footage
-- For macro/close-up interstitial scenes: "100mm macro lens, extremely shallow depth of field" — these are Wan 2.5's sweet spot
-- Describe acoustic space for audio: "large domed interior with long natural reverb" not just "mosque sounds"
-- Front-load the most important visual info in the first sentence
-- Never put resolution or duration in the prompt text
+- Replace vague with specific: NOT "beautiful mosque" → YES "Grand marble mosque with golden domes, warm amber light reflecting off wet courtyard tiles, volumetric light rays piercing through arched windows"
+- **ALWAYS include physical motion** — a scene with only camera movement and no subject motion looks like a photograph with a Ken Burns effect
+- For macro/close-up: "100mm macro lens, extremely shallow depth of field, anamorphic bokeh" — Wan 2.5's sweet spot
+- **Never describe what ISN'T there** — only what IS. "A scene without people" is a wasted token. "A lone brass lamp on weathered stone" tells the model what to render.
+- Never put resolution, duration, or quality numbers in the prompt text (they're set in API parameters)
 
 ### Audio Cue Vocabulary (use freely — Wan 2.5 will generate these sounds)
 - **Wind**: gentle desert wind, soft breeze through palm fronds, low howling wind across stone
@@ -218,8 +270,9 @@ You must output valid JSON and nothing else. No markdown fencing, no explanatory
   "scene_bible": {
     "time_of_day": "golden hour, 15 minutes before Maghrib",
     "color_anchors": ["warm amber", "cream", "deep indigo"],
+    "color_grade": "warm Kodak Portra tones with lifted shadows",
     "material_palette": ["sandstone", "aged brass", "wet marble", "dark walnut"],
-    "film_look": "35mm Kodak 5219 with natural grain, anamorphic 2.0x",
+    "film_look": "35mm Kodak 5219 with natural grain, anamorphic 2.0x, shallow depth of field",
     "ambient_sound_base": "gentle desert wind with distant birdsong"
   },
   "scenes": [
@@ -230,7 +283,7 @@ You must output valid JSON and nothing else. No markdown fencing, no explanatory
       "narration": "A man once stood in a crowded market while strangers threw insults at his back. He did not turn.",
       "text_lines": ["He did not turn."],
       "emphasis_words": ["turn"],
-      "visual_prompt": "A single brass oil lamp flickering beside a wrapped cloth bundle on a carved walnut lectern. A dried rose petal rests on the folded cream silk covering the bundle. Shot on 35mm Kodak 5219 with natural grain, anamorphic 2.0x. Static close-up, 85mm portrait lens, shallow depth of field on the rose petal. Warm amber candlelight from the brass oil lamp to the left, casting long shadows across the lectern. Palette: warm amber, cream, walnut brown, dusty rose, deep shadow.",
+      "visual_prompt": "A single brass oil lamp flickering on a carved walnut lectern, flame dancing and casting warm shadows that shift across weathered sandstone walls. A dried rose petal rests on folded cream silk. Dust motes drift slowly through a shaft of amber light from a narrow arched window above. Slow dolly-in at breathing pace, 85mm portrait lens, extremely shallow depth of field with anamorphic bokeh. Warm Kodak Portra tones with lifted shadows, cinematic film grain, photoreal 4K detail. Light gradually intensifies as the flame steadies, deepening the gold across the stone.",
       "camera": "static close-up, 85mm portrait lens",
       "lighting": "warm amber candlelight from brass oil lamp to the left",
       "color_palette": ["warm amber", "cream", "walnut brown", "dusty rose", "deep shadow"],
