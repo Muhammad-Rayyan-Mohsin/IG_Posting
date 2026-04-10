@@ -51,6 +51,7 @@ from video_generator import VideoGenerator
 from video_assembler import VideoAssembler
 from instagram_poster import InstagramPoster
 from content_ledger import ContentLedger
+from topic_intelligence import build_trending_context
 
 
 def _check_env_vars(required: list[str]) -> list[str]:
@@ -166,6 +167,23 @@ def run_pipeline():
             sys.exit(0)
 
         # ==============================================================
+        # Step 1.5: Fetch trending context (Google Autocomplete + Reddit)
+        # ==============================================================
+        logger.info("Step 1.5/5 — Fetching trending context")
+        try:
+            trending_context = build_trending_context()
+            if trending_context:
+                logger.info(
+                    "Trending context ready ({} chars) — Claude will consider it",
+                    len(trending_context),
+                )
+            else:
+                logger.info("No trending data — Claude will use normal topic selection")
+        except Exception as exc:
+            logger.warning("Trending context fetch failed: {} — continuing without it", exc)
+            trending_context = ""
+
+        # ==============================================================
         # Step 2: Generate script
         # ==============================================================
         logger.info("Step 2/5 — Generating script")
@@ -176,6 +194,7 @@ def run_pipeline():
         script_data = script_gen.generate_script(
             used_references=used_refs,
             last_hashtag_set_id=last_hashtag_id,
+            trending_context=trending_context,
         )
 
         logger.info(

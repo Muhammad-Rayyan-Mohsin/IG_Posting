@@ -187,7 +187,12 @@ class ScriptGenerator:
             retry_state.outcome.exception(),
         ),
     )
-    def generate_script(self, used_references: list[str] | None = None, last_hashtag_set_id: int = 0) -> dict:
+    def generate_script(
+        self,
+        used_references: list[str] | None = None,
+        last_hashtag_set_id: int = 0,
+        trending_context: str = "",
+    ) -> dict:
         """
         Generate a complete Islamic video script for today's category.
 
@@ -195,6 +200,9 @@ class ScriptGenerator:
             used_references: List of previously used content references
                 (e.g. Quran verse refs, Hadith numbers) to avoid repetition.
             last_hashtag_set_id: ID of the most recently used hashtag set.
+            trending_context: Optional block of trending topics from
+                Google Autocomplete + Reddit. Injected into the prompt so
+                Claude can weave timely themes into the script.
 
         Returns:
             A dict containing: title, scene_bible, scenes, caption,
@@ -217,11 +225,24 @@ class ScriptGenerator:
                 + "\n".join(f"- {ref}" for ref in used_references)
             )
 
+        # Trending context injection — purely advisory, Claude decides
+        # whether any trending topic fits today's category
+        trending_block = ""
+        if trending_context:
+            trending_block = (
+                f"\n\n{trending_context}\n\n"
+                f"If any of the trending themes above naturally connect to today's "
+                f"category ({category}), weave that angle into your script. "
+                f"If nothing is relevant, ignore the trending data entirely and "
+                f"pick your topic freely.\n"
+            )
+
         user_prompt = (
             f"Generate a scene-card script for today's Islamic Instagram Reel.\n\n"
             f"**Category:** {category}\n"
             f"**Date:** {datetime.now().strftime('%A, %B %d, %Y')}\n"
-            f"{exclusion_text}\n\n"
+            f"{exclusion_text}"
+            f"{trending_block}\n\n"
             f"The video must be 30-50 seconds total (hard ceiling 90s), composed "
             f"of 3-5 scenes. **Each scene's duration field MUST be exactly 5 or 10** "
             f"(Wan 2.5 only supports these two clip lengths). "
