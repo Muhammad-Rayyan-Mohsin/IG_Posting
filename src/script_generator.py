@@ -252,8 +252,7 @@ class ScriptGenerator:
             f"Generate a scene-card script for today's Islamic Instagram Reel.\n\n"
             f"**Category:** {category}\n"
             f"**Date:** {datetime.now(timezone.utc).strftime('%A, %B %d, %Y')}\n"
-            f"{exclusion_text}"
-            f"{trending_block}\n\n"
+            f"{exclusion_text}\n\n"
             f"The video must be 30-50 seconds total (hard ceiling 90s), composed "
             f"of 3-5 scenes. **Each scene's duration field MUST be exactly 5 or 10** "
             f"(Wan 2.5 only supports these two clip lengths). "
@@ -266,6 +265,7 @@ class ScriptGenerator:
             f"system instructions. Do not include any text outside the JSON object. "
             f"The JSON must include these top-level fields: "
             f"title, scene_bible, scenes, caption, sources."
+            f"{trending_block}"
         )
 
         logger.info("Generating script for category: {}", category)

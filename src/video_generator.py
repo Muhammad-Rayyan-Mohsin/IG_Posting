@@ -323,7 +323,7 @@ class VideoGenerator:
         content with voiceover text):
 
             VISUAL: [film_look]. [scene.visual_prompt].
-            AMBIENT SOUND: [scene_bible.ambient_sound_base], [scene.audio_direction].
+            SOUND: [scene_bible.ambient_sound_base], [scene.audio_direction].
             VOICEOVER (off-camera audio only, do NOT render this text visually
             in the scene): a warm, reverent English male narrator with an
             unhurried storytelling cadence speaks clearly — <narration>.
@@ -359,7 +359,7 @@ class VideoGenerator:
         if audio:
             audio_segments.append(audio.strip(". "))
         if audio_segments:
-            prompt = f"{prompt}. AMBIENT SOUND: {', '.join(audio_segments)}"
+            prompt = f"{prompt}. SOUND: {', '.join(audio_segments)}"
 
         # --- VOICEOVER section (off-camera audio, NOT visual text) ---
         # Prefix is kept short so the full narration fits within PROMPT_MAX_CHARS.

@@ -143,15 +143,8 @@ When the story tempts you to show sacred text, substitute with these instead. Th
 | Someone reciting from a mushaf | A worn prayer rug laid out at cliff's edge, a single pair of sandals beside it, long shadows from low sun |
 | Arabic inscription on a dome | The curve of a dome against a pre-dawn sky, star-shaped lattice windows casting geometric light patterns on the floor |
 
-### Safe Visual Vocabulary (preferred subjects for faceless Islamic content)
-
-**Architecture**: mosque domes, minarets, arched windows, mihrab niches (without calligraphy), courtyard fountains, muqarnas, geometric tile work, carved stone arabesques, marble columns, stone lattice screens (mashrabiya), pre-dawn sky over a skyline of domes.
-
-**Nature**: deserts at dawn, date palms, oases, running water, still lakes, pre-dawn light, golden hour on stone, rain beading on marble, dew on leaves, drifting dust motes in sunlight, soft wind through grass, cloud reflections in water, starlit night skies.
-
-**Objects** (non-text): brass oil lamps, hanging lanterns, prayer beads (tasbih), incense burners, carved wooden stands, wrapped books on lecterns, silk cloths, clay water pitchers, steaming tea glasses, sandals at a threshold, prayer rugs with geometric patterns, candles, dates on brass platters.
-
-**Light and atmosphere**: shafts of sun through arched windows, dust particles in beams of light, candlelight flickering on stone, reflections on wet marble, long shadows of arches, moonlight through lattice screens, starlight on a dome.
+### Safe Visual Vocabulary
+Use mosque architecture (domes, minarets, arches, mihrabs, geometric tilework, mashrabiya screens), natural scenes (deserts, oases, dawn light, rain on marble, starlit skies), sacred objects (oil lamps, prayer beads, incense, wrapped books, prayer rugs with geometric patterns), and atmospheric lighting (shafts through arches, dust in beams, candlelight on stone). Never describe humans or text.
 
 ### Prompt Structure (7 layers — ALL required for eye-catching output)
 
@@ -167,14 +160,8 @@ Each visual_prompt must include ALL 7 layers. This layered approach is the diffe
 
 **Audio direction** goes in the separate `audio_direction` field, NOT in visual_prompt. **Narration** goes in the `narration` field. The pipeline handles both automatically.
 
-### Quality Booster Vocabulary (use 2-3 per scene from this list)
-
-```
-cinematic, photoreal, 4K detail, film grain, 24fps cinematic motion,
-shallow depth of field, anamorphic bokeh, volumetric lighting,
-photorealistic rendering, high dynamic range, filmic color science,
-smooth camera motion, natural scene dynamics, professional color grade
-```
+### Quality Boosters (always include 2-3)
+Add: cinematic, photoreal, 4K detail, film grain, shallow depth of field, anamorphic bokeh, smooth camera motion. These are quality-level signals the model uses to allocate detail budget.
 
 ### Color Grading Vocabulary (use one per scene — this transforms flat output into cinema)
 
@@ -187,31 +174,11 @@ smooth camera motion, natural scene dynamics, professional color grade
 | "high-key ethereal glow with soft pastel diffusion" | Hopeful, pure, transcendent | Paradise imagery, mercy themes, Jummah |
 | "natural film stock with gentle grain and true-to-life color" | Documentary, authentic, grounded | Nature reflection, real-world scenes |
 
-### Atmospheric Effects Vocabulary (use 1-2 per scene — these add physical depth)
+### Atmospheric Effects (use 1-2 per scene)
+Choose from: volumetric light rays, dust particles in beams, soft mist, heat haze, smoke from incense, rain through lamplight, dew refracting light, fog diffusing moonlight. These add physical depth — without them clips look flat.
 
-```
-volumetric light rays, dust particles floating in golden beams,
-soft morning mist drifting at ground level, heat haze rising from stone,
-smoke curling upward from incense, water vapor catching light,
-rain streaking through lamplight, dew droplets refracting dawn light,
-candlelight shadows dancing on textured walls, fog diffusing moonlight,
-pollen drifting through shafts of sun, steam rising from a hot surface
-```
-
-### Physical Motion Vocabulary (use 1-2 per scene — without these, clips look static)
-
-```
-flame flickering and casting dancing shadows on stone,
-water rippling outward from a single drop in a still pool,
-silk cloth billowing gently in a warm desert breeze,
-incense smoke curling and twisting upward in slow spirals,
-prayer beads swinging gently on a stand,
-candle wax dripping slowly down a brass holder,
-leaves trembling in a soft wind, petals drifting downward,
-dust motes swirling in a shaft of golden light,
-reflection shimmering on wet marble as light shifts,
-curtain fabric swaying beside an open arched window
-```
+### Physical Motion (use 1-2 per scene — CRITICAL)
+Without physical motion, Wan 2.5 generates static scenes. Always include something MOVING: flame flickering with dancing shadows, water rippling, silk billowing in breeze, incense smoke curling, prayer beads swinging, candle wax dripping, leaves trembling, dust swirling in light.
 
 ### Best Practices
 - **Front-load** the most visually striking element in the first sentence
@@ -223,14 +190,8 @@ curtain fabric swaying beside an open arched window
 - **Never describe what ISN'T there** — only what IS. "A scene without people" is a wasted token. "A lone brass lamp on weathered stone" tells the model what to render.
 - Never put resolution, duration, or quality numbers in the prompt text (they're set in API parameters)
 
-### Audio Cue Vocabulary (use freely — Wan 2.5 will generate these sounds)
-- **Wind**: gentle desert wind, soft breeze through palm fronds, low howling wind across stone
-- **Water**: distant waves lapping, fountain trickling, rain beading on marble, river flowing softly
-- **Fire**: candle flame crackling, oil lamp sputtering, distant fireplace hiss
-- **Birds**: distant birdsong at dawn, sparrows chirping, doves cooing softly
-- **Stone/space**: large stone interior with long natural reverb, courtyard echo, cavernous dome resonance
-- **Fabric/objects**: pages turning softly, prayer beads clicking, tea being poured into a cup, a door creaking ajar
-- **Atmosphere**: distant call to prayer echoing faintly, soft wind chime, muffled rainstorm through walls
+### Audio Cue Vocabulary
+Describe concrete, synthesizable sounds: wind through stone, water flowing, fire crackling, birds at dawn, stone reverb, fabric rustling, objects clinking (prayer beads, tea pouring, pages turning). Always describe the acoustic space ("large domed interior with long reverb" not just "mosque sounds").
 
 ---
 
