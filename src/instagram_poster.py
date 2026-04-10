@@ -13,7 +13,7 @@ Pipeline:
 
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import boto3
@@ -85,6 +85,15 @@ class InstagramPoster:
     # Instagram token validation
     # ------------------------------------------------------------------
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=15),
+        retry=retry_if_exception_type((requests.RequestException, ConnectionError)),
+        before_sleep=lambda rs: logger.warning(
+            "Retrying token validation (attempt {}) after: {}",
+            rs.attempt_number, rs.outcome.exception(),
+        ),
+    )
     def validate_token(self) -> None:
         """Validate the Instagram access token by calling the /me endpoint.
 
@@ -149,7 +158,7 @@ class InstagramPoster:
             raise FileNotFoundError(f"Video file not found: {video_path}")
 
         # Generate a unique object key
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         unique_id = uuid.uuid4().hex[:8]
         key = f"reels/{timestamp}_{unique_id}{video_file.suffix}"
 
@@ -402,11 +411,11 @@ class InstagramPoster:
 
         # Fetch the permalink for the published Reel
         try:
-            permalink_url = (
-                f"{IG_API_BASE}/{post_id}"
-                f"?fields=permalink&access_token={self.ig_access_token}"
+            permalink_resp = requests.get(
+                f"{IG_API_BASE}/{post_id}",
+                params={"fields": "permalink", "access_token": self.ig_access_token},
+                timeout=15,
             )
-            permalink_resp = requests.get(permalink_url, timeout=15)
             permalink_resp.raise_for_status()
             permalink_data = permalink_resp.json()
             permalink = permalink_data.get("permalink", "")

@@ -172,7 +172,7 @@ class VideoGenerator:
         future_to_meta: dict = {}
         gap_indices: set[int] = set()  # 1-based indices with empty prompts
 
-        with ThreadPoolExecutor(max_workers=max(len(accepted), 1)) as executor:
+        with ThreadPoolExecutor(max_workers=min(len(accepted), 3)) as executor:
             for idx, scene, snapped_duration, prompt in accepted:
                 if not prompt:
                     gap_indices.add(idx)
@@ -372,7 +372,7 @@ class VideoGenerator:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=2, min=5, max=60),
-        retry=retry_if_exception_type(Exception),
+        retry=retry_if_exception_type((requests.RequestException, ConnectionError, TimeoutError, OSError)),
         before_sleep=lambda rs: logger.warning(
             "Retrying Wan 2.5 generation (attempt {}) after: {}",
             rs.attempt_number, rs.outcome.exception(),

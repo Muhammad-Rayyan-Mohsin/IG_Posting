@@ -9,7 +9,7 @@ import json
 import os
 import tempfile
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import gspread
 from loguru import logger
@@ -235,7 +235,7 @@ class ContentLedger:
         Each entry is a dict keyed by the header names.
         """
         records = self._get_all_records()
-        cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
         recent = [r for r in records if r.get("Date", "") >= cutoff]
         logger.info(
             "Returning {} entries from the last {} days (cutoff {})",
@@ -288,7 +288,7 @@ class ContentLedger:
         """
         script_preview = script[:100] if script else ""
         sources_json = json.dumps(sources, ensure_ascii=False)
-        created_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
         new_row = [
             date,
@@ -343,57 +343,29 @@ class ContentLedger:
             - ``instagram_post_id`` -> Instagram Post ID column
             - ``error_message`` -> Error column
         """
-        # Column indices (1-based) matching HEADERS
         col_map = {
             "Video URL": 7,
             "Instagram Post ID": 8,
             "Status": 9,
             "Error": 10,
         }
-
         kwarg_to_col = {
             "video_url": "Video URL",
             "instagram_post_id": "Instagram Post ID",
             "error_message": "Error",
         }
 
-        # Build a single batch update: collect all (col_index, value) pairs
-        # starting with Status, then any provided kwargs.
-        updates: list[tuple[int, str]] = [(col_map["Status"], status)]
-        for kwarg_key, col_name in kwarg_to_col.items():
-            if kwarg_key in kwargs and kwargs[kwarg_key] is not None:
-                updates.append((col_map[col_name], str(kwargs[kwarg_key])))
+        # Always update status
+        self.worksheet.update_cell(row, col_map["Status"], status)
+        logger.info("Row {} status updated to '{}'", row, status)
 
-        # Sort by column index so the range arithmetic is straightforward.
-        updates.sort(key=lambda x: x[0])
-
-        if updates:
-            min_col = updates[0][0]
-            max_col = updates[-1][0]
-            # Build a single row of values spanning min_col..max_col,
-            # leaving unchanged columns as empty strings.
-            row_values = [""] * (max_col - min_col + 1)
-            for col_idx, value in updates:
-                row_values[col_idx - min_col] = value
-
-            # Convert column index to letter (A=1, G=7, H=8, I=9, J=10)
-            def col_letter(n: int) -> str:
-                result = ""
-                while n > 0:
-                    n, remainder = divmod(n - 1, 26)
-                    result = chr(65 + remainder) + result
-                return result
-
-            range_notation = (
-                f"{col_letter(min_col)}{row}:{col_letter(max_col)}{row}"
-            )
-            self.worksheet.update(range_notation, [row_values])
-            logger.info(
-                "Row {} batch-updated {} — status='{}'",
-                row,
-                range_notation,
-                status,
-            )
+        # Update optional fields
+        for kwarg, col_name in kwarg_to_col.items():
+            value = kwargs.get(kwarg)
+            if value is not None:
+                col = col_map[col_name]
+                self.worksheet.update_cell(row, col, str(value))
+                logger.info("Row {} '{}' set to '{}'", row, col_name, str(value)[:80])
 
         self._invalidate_cache()
 
@@ -429,7 +401,7 @@ if __name__ == "__main__":
 
     # Log a test entry
     test_row = ledger.log_entry(
-        date=datetime.utcnow().strftime("%Y-%m-%d"),
+        date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         category="Test",
         title="Smoke Test Entry",
         script="This is a test script to verify the content ledger is working correctly.",

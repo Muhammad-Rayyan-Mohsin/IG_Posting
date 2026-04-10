@@ -174,7 +174,7 @@ class ScriptGenerator:
             candidates = self.hashtag_sets
 
         # Rotate fairly based on day-of-year
-        day_of_year = datetime.now().timetuple().tm_yday
+        day_of_year = datetime.now(timezone.utc).timetuple().tm_yday
         selected = candidates[day_of_year % len(candidates)]
 
         logger.info(
@@ -187,7 +187,7 @@ class ScriptGenerator:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=30),
-        retry=retry_if_exception_type((Exception,)),
+        retry=retry_if_exception_type((requests.RequestException, ConnectionError, TimeoutError, ValueError, json.JSONDecodeError)),
         before_sleep=lambda retry_state: logger.warning(
             "Retry attempt {} after error: {}",
             retry_state.attempt_number,
@@ -251,7 +251,7 @@ class ScriptGenerator:
         user_prompt = (
             f"Generate a scene-card script for today's Islamic Instagram Reel.\n\n"
             f"**Category:** {category}\n"
-            f"**Date:** {datetime.now().strftime('%A, %B %d, %Y')}\n"
+            f"**Date:** {datetime.now(timezone.utc).strftime('%A, %B %d, %Y')}\n"
             f"{exclusion_text}"
             f"{trending_block}\n\n"
             f"The video must be 30-50 seconds total (hard ceiling 90s), composed "
@@ -303,7 +303,7 @@ class ScriptGenerator:
 
         # Attach metadata
         parsed["category"] = category
-        parsed["generated_at"] = datetime.now().isoformat()
+        parsed["generated_at"] = datetime.now(timezone.utc).isoformat()
 
         # Attach hashtags (get set, avoiding last used)
         hashtag_set = self.get_hashtag_set(last_used_set_id=last_hashtag_set_id)
