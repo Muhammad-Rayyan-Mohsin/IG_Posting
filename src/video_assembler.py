@@ -87,12 +87,12 @@ class VideoAssembler:
     SUBTITLE_MIN_DURATION = 0.6            # never flash a chunk faster than this
     SUBTITLE_FADE_IN_DURATION = 0.12       # faster fade than text cards
 
-    # Whisper-based subtitle sync. If OPENAI_API_KEY is set, each clip's
-    # audio is transcribed via OpenAI Whisper and word-level timestamps drive
-    # subtitle timing. Falls back to uniform distribution if unset.
-    WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions"
-    WHISPER_MODEL = "whisper-1"
-    WHISPER_TIMEOUT_SECONDS = 60
+    # Whisper-based subtitle sync using local faster-whisper (free, no API key).
+    # Model downloads on first use (~74MB for "base") and is cached.
+    # Falls back to uniform distribution if the model fails to load.
+    WHISPER_MODEL_SIZE = "base"    # tiny=39MB, base=74MB, small=244MB
+    WHISPER_DEVICE = "cpu"         # "cpu" or "cuda" (Mac: cpu only)
+    WHISPER_COMPUTE_TYPE = "int8"  # int8 is fastest on CPU
 
     # Audio mixing — Wan 2.5 native audio is the primary soundscape.
     # Ambient is ducked to avoid fighting the narration voice (200-800Hz overlap).
@@ -756,15 +756,52 @@ class VideoAssembler:
         draw.ellipse([x, y + h - 2 * r, x + 2 * r, y + h], fill=fill)
         draw.ellipse([x + w - 2 * r, y + h - 2 * r, x + w, y + h], fill=fill)
 
+    # Lazy-loaded faster-whisper model (shared across all clips in one run)
+    _whisper_model = None
+    _whisper_model_failed = False
+
+    def _get_whisper_model(self):
+        """Lazy-load the faster-whisper model. Returns None if unavailable."""
+        if self._whisper_model is not None:
+            return self._whisper_model
+        if self._whisper_model_failed:
+            return None
+
+        try:
+            from faster_whisper import WhisperModel
+
+            logger.info(
+                "Loading faster-whisper model '{}' (first call downloads ~74MB)...",
+                self.WHISPER_MODEL_SIZE,
+            )
+            model = WhisperModel(
+                self.WHISPER_MODEL_SIZE,
+                device=self.WHISPER_DEVICE,
+                compute_type=self.WHISPER_COMPUTE_TYPE,
+            )
+            VideoAssembler._whisper_model = model
+            logger.info("faster-whisper model loaded successfully")
+            return model
+        except Exception as exc:
+            logger.warning(
+                "Failed to load faster-whisper model: {} — "
+                "subtitles will use uniform timing for all clips",
+                exc,
+            )
+            VideoAssembler._whisper_model_failed = True
+            return None
+
     def _whisper_transcribe_words(self, clip_path: str) -> list[dict] | None:
-        """Transcribe a clip's audio with OpenAI Whisper and return word-level
-        timestamps. Returns None if OPENAI_API_KEY is not set or the API fails
-        — the caller then falls back to uniform subtitle distribution.
+        """Transcribe a clip's audio with local faster-whisper and return
+        word-level timestamps. Completely free, no API key needed.
+
+        Returns None if the model fails to load or transcription errors —
+        the caller falls back to uniform subtitle distribution.
 
         Parameters
         ----------
         clip_path : str
-            Local path to the clip (mp4 accepted directly by the API).
+            Local path to the clip (mp4, wav, etc.).
 
         Returns
         -------
@@ -772,11 +809,8 @@ class VideoAssembler:
             List of ``{"word": str, "start": float, "end": float}`` entries,
             with times relative to the clip's beginning.
         """
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            logger.debug(
-                "OPENAI_API_KEY not set — using uniform subtitle timing"
-            )
+        model = self._get_whisper_model()
+        if model is None:
             return None
 
         path = Path(clip_path)
@@ -784,25 +818,23 @@ class VideoAssembler:
             return None
 
         try:
-            with open(path, "rb") as fh:
-                files = {"file": (path.name, fh, "video/mp4")}
-                data = {
-                    "model": self.WHISPER_MODEL,
-                    "response_format": "verbose_json",
-                    "timestamp_granularities[]": "word",
-                }
-                headers = {"Authorization": f"Bearer {api_key}"}
-                response = requests.post(
-                    self.WHISPER_API_URL,
-                    files=files,
-                    data=data,
-                    headers=headers,
-                    timeout=self.WHISPER_TIMEOUT_SECONDS,
-                )
-                response.raise_for_status()
+            segments, info = model.transcribe(
+                str(path),
+                word_timestamps=True,
+                language="en",
+            )
 
-            body = response.json()
-            words = body.get("words") or []
+            # Collect word-level timestamps from all segments
+            words: list[dict] = []
+            for segment in segments:
+                if segment.words:
+                    for w in segment.words:
+                        words.append({
+                            "word": w.word.strip(),
+                            "start": w.start,
+                            "end": w.end,
+                        })
+
             if not words:
                 logger.warning(
                     "Whisper returned no word timings for {} — "
@@ -811,12 +843,11 @@ class VideoAssembler:
                 )
                 return None
 
+            text_preview = " ".join(w["word"] for w in words[:15])
             logger.info(
-                "Whisper: transcribed {} words from {} (duration={}s, text='{}')",
-                len(words),
-                path.name,
-                body.get("duration"),
-                (body.get("text") or "")[:80],
+                "Whisper (local): transcribed {} words from {} "
+                "(duration={:.1f}s, text='{}')",
+                len(words), path.name, info.duration, text_preview[:80],
             )
             return words
         except Exception as exc:

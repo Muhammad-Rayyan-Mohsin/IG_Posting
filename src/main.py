@@ -72,22 +72,26 @@ def run_pipeline():
     # randomly skip ~5% of runs so the posting cadence looks human,
     # not cron-deterministic. Meta's integrity classifiers flag
     # fixed-schedule automated accounts.
+    # Set SKIP_JITTER=1 for local testing to bypass the delay.
     # ------------------------------------------------------------------
-    skip_roll = random.random()
-    if skip_roll < 0.05:
-        logger.info(
-            "Random skip today (5%% probability, roll={:.3f}) — "
-            "breaking posting determinism",
-            skip_roll,
-        )
-        sys.exit(0)
+    if not os.environ.get("SKIP_JITTER"):
+        skip_roll = random.random()
+        if skip_roll < 0.05:
+            logger.info(
+                "Random skip today (5%% probability, roll={:.3f}) — "
+                "breaking posting determinism",
+                skip_roll,
+            )
+            sys.exit(0)
 
-    jitter_seconds = random.randint(0, 90 * 60)  # 0 to 90 minutes
-    logger.info(
-        "Schedule jitter: waiting {:.0f} minutes before starting pipeline",
-        jitter_seconds / 60,
-    )
-    time.sleep(jitter_seconds)
+        jitter_seconds = random.randint(0, 90 * 60)  # 0 to 90 minutes
+        logger.info(
+            "Schedule jitter: waiting {:.0f} minutes before starting pipeline",
+            jitter_seconds / 60,
+        )
+        time.sleep(jitter_seconds)
+    else:
+        logger.info("SKIP_JITTER set — bypassing schedule jitter for local testing")
 
     today = datetime.now().strftime("%Y-%m-%d")
     output_dir = Path(__file__).resolve().parent.parent / "output" / today
