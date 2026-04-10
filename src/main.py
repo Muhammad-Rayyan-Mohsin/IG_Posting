@@ -12,6 +12,7 @@ Pipeline:
     5. Post to Instagram           (Graph API via Cloudflare R2)
 """
 
+import json
 import os
 import random
 import sys
@@ -59,6 +60,21 @@ def _check_env_vars(required: list[str]) -> list[str]:
     return [var for var in required if not os.environ.get(var)]
 
 
+def _is_stale_entry(created_at_str: str, hours: int = 2) -> bool:
+    """Check if a ledger entry's Created At is older than `hours` hours."""
+    if not created_at_str:
+        return True  # No timestamp = treat as stale
+    try:
+        # Try parsing ISO format
+        created = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        return created < cutoff
+    except (ValueError, TypeError):
+        return True  # Unparseable = treat as stale
+
+
 def run_pipeline():
     """Execute the full content pipeline.
 
@@ -95,7 +111,11 @@ def run_pipeline():
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     output_dir = Path(__file__).resolve().parent.parent / "output" / today
-    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.error("Cannot create output directory {}: {}", output_dir, exc)
+        sys.exit(1)
 
     logger.info("=" * 60)
     logger.info("PIPELINE START — {}", today)
@@ -171,7 +191,9 @@ def run_pipeline():
             sys.exit(0)
 
         already_in_progress = any(
-            r.get("Date") == today and r.get("Status") in ("generated", "assembled")
+            r.get("Date") == today
+            and r.get("Status") in ("generated", "assembled")
+            and not _is_stale_entry(r.get("Created At", ""), hours=2)
             for r in recent
         )
         if already_in_progress:
@@ -180,6 +202,20 @@ def run_pipeline():
                 today,
             )
             sys.exit(0)
+
+        # Claim today's slot immediately to prevent concurrent runs
+        # from also passing the dedup guard. This writes a "pending"
+        # row before any expensive API work starts.
+        logger.info("Claiming today's slot in ledger")
+        ledger_row = ledger.log_entry(
+            date=today,
+            category="(pending)",
+            title="(generating...)",
+            script="",
+            sources=[],
+            hashtag_set_id=0,
+        )
+        logger.info("Claimed ledger row {} for {}", ledger_row, today)
 
         # ==============================================================
         # Step 1.5: Fetch trending context (Google Autocomplete + Reddit)
@@ -226,16 +262,19 @@ def run_pipeline():
             for line in scene.get("text_lines", [])
         )
 
-        # Log to ledger with status "generated"
-        ledger_row = ledger.log_entry(
-            date=today,
-            category=script_data.get("category", ""),
-            title=script_data.get("title", ""),
-            script=script_preview,
-            sources=script_data.get("sources", []),
-            hashtag_set_id=script_data.get("hashtag_set_id", 0),
+        # Update the pending row with actual script data
+        ledger.update_status(
+            ledger_row,
+            "generated",
+            video_url="",
         )
-        logger.info("Ledger entry created at row {}", ledger_row)
+        # Update title and other fields via direct cell writes
+        ledger.worksheet.update_cell(ledger_row, 2, script_data.get("category", ""))
+        ledger.worksheet.update_cell(ledger_row, 3, script_data.get("title", ""))
+        ledger.worksheet.update_cell(ledger_row, 4, script_preview[:500])
+        ledger.worksheet.update_cell(ledger_row, 5, json.dumps(script_data.get("sources", []), ensure_ascii=False)[:10000])
+        ledger.worksheet.update_cell(ledger_row, 6, str(script_data.get("hashtag_set_id", 0)))
+        logger.info("Ledger row {} updated with script data", ledger_row)
 
         # ==============================================================
         # Step 3: Generate video clips (Wan 2.5 per scene via fal.ai)

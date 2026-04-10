@@ -299,7 +299,7 @@ class VideoAssembler:
             return final_path
 
         finally:
-            all_to_close = scene_clips + overlay_clips + [
+            all_to_close = scene_clips + overlay_clips + audio_tracks + [
                 c for c in [mixed_audio, final] if c is not None
             ]
             self._close_clips(all_to_close)
@@ -368,8 +368,12 @@ class VideoAssembler:
         p = Path(clip_path)
         normalized = p.with_stem(p.stem + "_norm")
         if normalized.exists():
-            logger.debug("Using existing normalized clip: {}", normalized.name)
-            return str(normalized)
+            if normalized.stat().st_size > 1024:  # >1KB = probably valid
+                logger.debug("Using existing normalized clip: {}", normalized.name)
+                return str(normalized)
+            else:
+                logger.warning("Removing corrupted/empty normalized clip: {}", normalized.name)
+                normalized.unlink(missing_ok=True)
 
         af = (
             f"loudnorm=I={self.LOUDNORM_TARGET_LUFS}"

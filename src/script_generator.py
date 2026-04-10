@@ -291,7 +291,10 @@ class ScriptGenerator:
         response.raise_for_status()
 
         body = response.json()
-        response_text = body["content"][0]["text"]
+        content = body.get("content") or []
+        if not content or not isinstance(content, list):
+            raise ValueError(f"Anthropic API returned empty/missing content array: {list(body.keys())}")
+        response_text = content[0].get("text", "")
 
         if not response_text:
             raise ValueError("Anthropic API returned an empty response")

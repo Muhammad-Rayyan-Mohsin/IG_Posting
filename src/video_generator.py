@@ -192,22 +192,30 @@ class VideoGenerator:
             # calls don't pile up inside the executor.
             results: dict[int, str] = {}  # 1-based idx -> clip path or ""
 
-            for future in as_completed(future_to_meta):
-                idx, scene, snapped_duration = future_to_meta[future]
-                try:
-                    clip_path = future.result()
-                    results[idx] = clip_path
-                    logger.success(
-                        "Scene {}/{} clip ready ({:.0f}s)",
-                        idx, len(scenes), snapped_duration,
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "Wan 2.5 failed for scene {}/{}: {} — attempting Pexels fallback",
-                        idx, len(scenes), exc,
-                    )
-                    fallback = self._pexels_fallback_for_scene(scene, idx)
-                    results[idx] = fallback if fallback else ""
+            try:
+                for future in as_completed(future_to_meta, timeout=600):
+                    idx, scene, snapped_duration = future_to_meta[future]
+                    try:
+                        clip_path = future.result()
+                        results[idx] = clip_path
+                        logger.success(
+                            "Scene {}/{} clip ready ({:.0f}s)",
+                            idx, len(scenes), snapped_duration,
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "Wan 2.5 failed for scene {}/{}: {} — attempting Pexels fallback",
+                            idx, len(scenes), exc,
+                        )
+                        fallback = self._pexels_fallback_for_scene(scene, idx)
+                        results[idx] = fallback if fallback else ""
+            except TimeoutError:
+                logger.error(
+                    "Clip generation timed out after 600s — cancelling remaining jobs"
+                )
+                for future in future_to_meta:
+                    future.cancel()
+                # Results collected so far are still usable
 
         # --- Phase 3: Assemble ordered clip_paths list ---
         clip_paths: list[str] = []
@@ -572,6 +580,10 @@ class VideoGenerator:
                 if chunk:
                     f.write(chunk)
                     total_bytes += len(chunk)
+
+        if total_bytes == 0:
+            output.unlink(missing_ok=True)
+            raise RuntimeError(f"Downloaded 0 bytes from {url} — file removed")
 
         logger.info(
             "Downloaded {:.1f} MB to {}",
