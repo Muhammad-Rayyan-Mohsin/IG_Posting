@@ -7,7 +7,7 @@ and posts it as an Instagram Reel.
 Pipeline:
     1. Initialize content ledger  (Google Sheets deduplication guard)
     2. Generate script             (Claude — scene cards format)
-    3. Generate video clips        (Wan 2.5 per scene via fal.ai)
+    3. Generate video clips        (Veo 3.1 Lite per scene via fal.ai)
     4. Assemble final video        (scene-card driven, nasheed audio)
     5. Post to Instagram           (Graph API via Cloudflare R2)
 """
@@ -277,7 +277,7 @@ def run_pipeline():
         logger.info("Ledger row {} updated with script data", ledger_row)
 
         # ==============================================================
-        # Step 3: Generate video clips (Wan 2.5 per scene via fal.ai)
+        # Step 3: Generate video clips (Veo 3.1 Lite per scene via fal.ai)
         # ==============================================================
         logger.info("Step 3/5 — Generating video clips")
         video_gen = VideoGenerator(
@@ -318,7 +318,7 @@ def run_pipeline():
 
         if not all_clips:
             raise RuntimeError(
-                "No video clips available — both Wan 2.5 generation and stock "
+                "No video clips available — both Veo 3.1 Lite generation and stock "
                 "footage fallback produced zero clips. Check FAL_API_KEY and PEXELS_API_KEY."
             )
 

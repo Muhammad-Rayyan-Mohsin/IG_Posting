@@ -1,19 +1,19 @@
 """
 Video Generator Module
 ----------------------
-Generates AI video clips via fal.ai (Wan 2.5 preview text-to-video) and
+Generates AI video clips via fal.ai (Veo 3.1 Lite text-to-video) and
 fetches stock footage from Pexels API for the automated Islamic Instagram
 content pipeline.
 
-Wan 2.5 generates native audio alongside the video — audio cues embedded in
-the prompt (ambient wind, water, birdsong, stone reverb, etc.) become the
+Veo 3.1 Lite generates native audio alongside the video — audio cues embedded
+in the prompt (ambient wind, water, birdsong, stone reverb, etc.) become the
 primary soundscape of each clip.
 
 Constraints enforced here:
-- Each clip is snapped to 5 or 10 seconds (Wan 2.5 enum).
+- Each clip is snapped to 4, 6, or 8 seconds (Veo 3.1 Lite enum).
 - The sum of clip durations for a single video is capped at 90 seconds.
 - Resolution: 720p. Aspect ratio: 9:16 portrait (Instagram Reels).
-- Pexels stock footage is used as a per-scene fallback when Wan 2.5 fails.
+- Pexels stock footage is used as a per-scene fallback when Veo 3.1 Lite fails.
 """
 
 from __future__ import annotations
@@ -36,33 +36,31 @@ from tenacity import (
 
 
 class VideoGenerator:
-    """Generates video clips using Wan 2.5 (fal.ai) and Pexels (stock footage)."""
+    """Generates video clips using Veo 3.1 Lite (fal.ai) and Pexels (stock footage)."""
 
     # Target dimensions for Instagram Reels (9:16 portrait)
     TARGET_WIDTH = 1080
     TARGET_HEIGHT = 1920
 
     # fal.ai model endpoint
-    FAL_MODEL = "fal-ai/wan-25-preview/text-to-video"
+    FAL_MODEL = "fal-ai/veo3.1/lite"
 
-    # Wan 2.5 request defaults
-    WAN_RESOLUTION = "720p"
-    WAN_ASPECT_RATIO = "9:16"
-    # Compressed to fit Wan 2.5 negative_prompt max of 500 chars.
-    WAN_NEGATIVE_PROMPT = (
-        "blurry, distorted, low quality, human faces, people, hands, "
-        "body parts, silhouettes, watermarks, logos, "
-        "English text on surfaces, subtitles burned in scene, "
-        "Arabic text, Arabic calligraphy, Arabic script, Quranic text, "
-        "Quranic verses, open Quran pages, handwritten Arabic, "
-        "calligraphy with legible letters, rendered text on objects"
+    # Veo 3.1 Lite request defaults
+    VEO_RESOLUTION = "720p"
+    VEO_ASPECT_RATIO = "9:16"
+    VEO_NEGATIVE_PROMPT = (
+        "blurry, distorted, low quality, human faces, people, hands, body parts, "
+        "silhouettes, watermarks, logos, English text on surfaces, "
+        "subtitles burned in scene, Arabic text, Arabic calligraphy, "
+        "Arabic script, Quranic text, open Quran pages, "
+        "handwritten Arabic, rendered text on objects"
     )
 
     # Final video length ceiling (seconds)
     MAX_TOTAL_DURATION = 90
 
-    # Wan 2.5 supports 800-char prompts. Leave 2 chars of safety headroom.
-    PROMPT_MAX_CHARS = 798
+    # Veo accepts 20K, but keep prompts concise for quality
+    PROMPT_MAX_CHARS = 2000
 
     # Pexels API base URL
     PEXELS_BASE_URL = "https://api.pexels.com/videos/search"
@@ -96,13 +94,13 @@ class VideoGenerator:
             # fal_client reads FAL_KEY from env, so mirror whatever was passed in.
             os.environ["FAL_KEY"] = fal_api_key
         else:
-            logger.warning("FAL_API_KEY is empty — Wan 2.5 AI clip generation will be unavailable")
+            logger.warning("FAL_API_KEY is empty — Veo 3.1 Lite AI clip generation will be unavailable")
         if not pexels_api_key:
             logger.warning("PEXELS_API_KEY is empty — Pexels stock footage fallback will be unavailable")
 
         logger.info(
             "VideoGenerator initialized — model={} resolution={} aspect={} cap={}s",
-            self.FAL_MODEL, self.WAN_RESOLUTION, self.WAN_ASPECT_RATIO, self.MAX_TOTAL_DURATION,
+            self.FAL_MODEL, self.VEO_RESOLUTION, self.VEO_ASPECT_RATIO, self.MAX_TOTAL_DURATION,
         )
 
     # ------------------------------------------------------------------
@@ -114,14 +112,14 @@ class VideoGenerator:
         scenes: list[dict],
         scene_bible: dict | None = None,
     ) -> list[str]:
-        """Generate one Wan 2.5 clip per scene, capped at 90s total.
+        """Generate one Veo 3.1 Lite clip per scene, capped at 90s total.
 
         Parameters
         ----------
         scenes : list[dict]
             Scene cards from the script generator. Each scene must have
             ``visual_prompt`` and ``audio_direction`` keys; ``duration`` is
-            snapped to 5 or 10 seconds.
+            snapped to 4, 6, or 8 seconds.
         scene_bible : dict, optional
             Global style anchors (``film_look``, ``color_anchors``,
             ``ambient_sound_base``) prepended to every prompt so independently
@@ -135,7 +133,7 @@ class VideoGenerator:
             assembler can detect gaps.
         """
         scene_bible = scene_bible or {}
-        logger.info("Generating {} Wan 2.5 clips (90s cap)", len(scenes))
+        logger.info("Generating {} Veo 3.1 Lite clips (90s cap)", len(scenes))
 
         # --- Phase 1: Precompute which scenes fit under the 90s cap ---
         # Determine the subset of scenes to generate before dispatching any
@@ -179,7 +177,7 @@ class VideoGenerator:
                     continue
                 output_path = str(self.clips_dir / f"scene_clip_{idx:02d}.mp4")
                 future = executor.submit(
-                    self._generate_wan25_clip,
+                    self._generate_veo_clip,
                     prompt=prompt,
                     duration_sec=snapped_duration,
                     output_path=output_path,
@@ -204,7 +202,7 @@ class VideoGenerator:
                         )
                     except Exception as exc:
                         logger.error(
-                            "Wan 2.5 failed for scene {}/{}: {} — attempting Pexels fallback",
+                            "Veo 3.1 Lite failed for scene {}/{}: {} — attempting Pexels fallback",
                             idx, len(scenes), exc,
                         )
                         fallback = self._pexels_fallback_for_scene(scene, idx)
@@ -304,20 +302,25 @@ class VideoGenerator:
         return [{"description": p.get("prompt", "")} for p in selected]
 
     # ------------------------------------------------------------------
-    # Wan 2.5 / fal.ai internals
+    # Veo 3.1 Lite / fal.ai internals
     # ------------------------------------------------------------------
 
     @staticmethod
     def _snap_duration(raw_duration) -> int:
-        """Snap an arbitrary scene duration to Wan 2.5's enum values (5 or 10)."""
+        """Snap an arbitrary scene duration to Veo 3.1 Lite's enum values (4, 6, or 8)."""
         try:
             value = float(raw_duration)
         except (TypeError, ValueError):
-            return 10
-        return 5 if value <= 5 else 10
+            return 8
+        if value <= 4:
+            return 4
+        elif value <= 6:
+            return 6
+        else:
+            return 8
 
     def _build_prompt(self, scene: dict, scene_bible: dict) -> str:
-        """Build a Wan 2.5 prompt from a scene card.
+        """Build a Veo 3.1 Lite prompt from a scene card.
 
         Structure (labelled sections so the model doesn't confuse visual
         content with voiceover text):
@@ -329,9 +332,10 @@ class VideoGenerator:
             unhurried storytelling cadence speaks clearly — <narration>.
 
         The explicit "do NOT render this text visually" instruction is
-        critical: without it, Wan 2.5 sometimes writes the quoted narration
-        words onto surfaces in the scene (pages, walls, etc.). Quotes are
-        deliberately avoided around the narration text for the same reason.
+        critical: without it, Veo 3.1 Lite sometimes writes the quoted
+        narration words onto surfaces in the scene (pages, walls, etc.).
+        Quotes are deliberately avoided around the narration text for the
+        same reason.
         """
         film_look = scene_bible.get("film_look", "")
         color_grade = scene_bible.get("color_grade", "")
@@ -373,7 +377,7 @@ class VideoGenerator:
 
         if len(prompt) > self.PROMPT_MAX_CHARS:
             prompt = prompt[: self.PROMPT_MAX_CHARS - 3].rstrip() + "..."
-            logger.debug("Truncated prompt to {} chars for Wan 2.5", self.PROMPT_MAX_CHARS)
+            logger.debug("Truncated prompt to {} chars for Veo 3.1 Lite", self.PROMPT_MAX_CHARS)
 
         return prompt
 
@@ -382,29 +386,29 @@ class VideoGenerator:
         wait=wait_exponential(multiplier=2, min=5, max=60),
         retry=retry_if_exception_type((requests.RequestException, ConnectionError, TimeoutError, OSError)),
         before_sleep=lambda rs: logger.warning(
-            "Retrying Wan 2.5 generation (attempt {}) after: {}",
+            "Retrying Veo 3.1 Lite generation (attempt {}) after: {}",
             rs.attempt_number, rs.outcome.exception(),
         ),
     )
-    def _generate_wan25_clip(
+    def _generate_veo_clip(
         self,
         prompt: str,
         duration_sec: int,
         output_path: str,
         scene_idx: int,
     ) -> str:
-        """Submit a single Wan 2.5 text-to-video job and download the result.
+        """Submit a single Veo 3.1 Lite text-to-video job and download the result.
 
         Uses ``fal_client.subscribe`` which blocks until the queue job
-        finishes, streaming logs for visibility. Wan 2.5 typically completes
-        in 1–3 minutes per clip.
+        finishes, streaming logs for visibility. Veo 3.1 Lite typically
+        completes in 1–3 minutes per clip.
         """
         if not self.fal_api_key:
             raise RuntimeError("FAL_KEY not set — cannot call fal.ai")
 
         logger.info(
-            "Scene {} — submitting Wan 2.5 job ({}s, {}, {})",
-            scene_idx, duration_sec, self.WAN_RESOLUTION, self.WAN_ASPECT_RATIO,
+            "Scene {} — submitting Veo 3.1 Lite job ({}s, {}, {})",
+            scene_idx, duration_sec, self.VEO_RESOLUTION, self.VEO_ASPECT_RATIO,
         )
         logger.debug("Scene {} prompt ({} chars): {}", scene_idx, len(prompt), prompt)
 
@@ -420,12 +424,13 @@ class VideoGenerator:
             self.FAL_MODEL,
             arguments={
                 "prompt": prompt,
-                "negative_prompt": self.WAN_NEGATIVE_PROMPT,
-                "aspect_ratio": self.WAN_ASPECT_RATIO,
-                "resolution": self.WAN_RESOLUTION,
-                "duration": str(duration_sec),
-                "enable_prompt_expansion": True,
-                "enable_safety_checker": True,
+                "negative_prompt": self.VEO_NEGATIVE_PROMPT,
+                "aspect_ratio": self.VEO_ASPECT_RATIO,
+                "resolution": self.VEO_RESOLUTION,
+                "duration": f"{duration_sec}s",  # Veo needs "4s"/"6s"/"8s" strings!
+                "generate_audio": True,
+                "auto_fix": True,
+                "safety_tolerance": "4",
             },
             with_logs=True,
             on_queue_update=_on_queue_update,
@@ -433,17 +438,17 @@ class VideoGenerator:
 
         video_url = self._extract_video_url(result)
         if not video_url:
-            raise RuntimeError(f"Wan 2.5 returned no video URL — raw result: {result}")
+            raise RuntimeError(f"Veo 3.1 Lite returned no video URL — raw result: {result}")
 
-        logger.info("Scene {} — Wan 2.5 complete, downloading {}", scene_idx, video_url)
+        logger.info("Scene {} — Veo 3.1 Lite complete, downloading {}", scene_idx, video_url)
         return self._download_video(video_url, output_path)
 
     @staticmethod
     def _extract_video_url(result) -> str | None:
-        """Pull the MP4 URL out of a fal.ai Wan 2.5 response.
+        """Pull the MP4 URL out of a fal.ai Veo 3.1 Lite response.
 
         Expected shape:
-            {"video": {"url": "...", "content_type": "video/mp4", ...}, "seed": ...}
+            {"video": {"url": "...", "content_type": "video/mp4", "file_name": "...", "file_size": N}}
         """
         if not isinstance(result, dict):
             return None
@@ -623,7 +628,7 @@ if __name__ == "__main__":
     sample_scenes = [
         {
             "id": 1,
-            "duration": 10,
+            "duration": 8,
             "narration": (
                 "A man once carried a single verse in his heart for forty years "
                 "before he understood what it meant."
@@ -646,7 +651,7 @@ if __name__ == "__main__":
         },
     ]
 
-    logger.info("Starting Wan 2.5 test clip generation...")
+    logger.info("Starting Veo 3.1 Lite test clip generation...")
     result = generator.generate_all_clips(sample_scenes, sample_scene_bible)
 
     print("\n" + "=" * 60)

@@ -6,7 +6,7 @@ scripts with a 7-day rotating topic cycle, hashtag rotation, and content
 deduplication.
 
 Output format: scene cards (3-5 scenes, 30-50 seconds total, 90s ceiling).
-Per-scene durations must be exactly 5 or 10 (Wan 2.5 enum constraint).
+Per-scene durations must be exactly 4, 6, or 8 (Veo 3.1 Lite enum constraint).
 """
 
 from __future__ import annotations
@@ -254,13 +254,13 @@ class ScriptGenerator:
             f"**Date:** {datetime.now(timezone.utc).strftime('%A, %B %d, %Y')}\n"
             f"{exclusion_text}\n\n"
             f"The video must be 30-50 seconds total (hard ceiling 90s), composed "
-            f"of 3-5 scenes. **Each scene's duration field MUST be exactly 5 or 10** "
-            f"(Wan 2.5 only supports these two clip lengths). "
+            f"of 3-5 scenes. **Each scene's duration field MUST be exactly 4, 6, or 8** "
+            f"(Veo 3.1 Lite only supports these three clip lengths). "
             f"Each scene is a self-contained visual moment — no continuous narration. "
             f"Use short, impactful text lines for on-screen display and rich visual "
             f"prompts for AI video generation. Every visual_prompt must include "
             f"concrete audio cues (wind, water, birds, stone reverb, etc.) in its "
-            f"audio_direction — Wan 2.5 synthesizes native audio from these cues.\n\n"
+            f"audio_direction — Veo 3.1 Lite synthesizes native audio from these cues.\n\n"
             f"Respond ONLY with valid JSON in the exact format specified in your "
             f"system instructions. Do not include any text outside the JSON object. "
             f"The JSON must include these top-level fields: "
@@ -328,7 +328,7 @@ class ScriptGenerator:
           - Required top-level fields: title, scene_bible, scenes, caption, sources
           - scene_bible fields: time_of_day, color_anchors (2-3 items), material_palette,
             film_look, ambient_sound_base
-          - scenes: list of 3-5 dicts, each with id, segment, duration (5 or 10),
+          - scenes: list of 3-5 dicts, each with id, segment, duration (4, 6, or 8),
             text_lines, emphasis_words, visual_prompt, camera, color_palette,
             audio_direction; lighting is optional
           - Total scene duration: 30-50 seconds target, 90 seconds hard ceiling
@@ -467,9 +467,9 @@ class ScriptGenerator:
                 )
 
             duration = scene["duration"]
-            if not isinstance(duration, int) or duration not in (5, 10):
+            if not isinstance(duration, int) or duration not in (4, 6, 8):
                 raise ValueError(
-                    f"scenes[{idx}].duration must be exactly 5 or 10 (Wan 2.5 enum), "
+                    f"scenes[{idx}].duration must be 4, 6, or 8 (Veo 3.1 Lite enum), "
                     f"got {duration!r}"
                 )
 
@@ -478,29 +478,42 @@ class ScriptGenerator:
                 raise ValueError(
                     f"scenes[{idx}].narration must be a non-empty string"
                 )
-            # Pace sanity-check: ~2.2 words/sec. 5s scenes: target 8-11 words, 10s: 18-22.
-            # Hard-reject if more than 30% outside the target range.
+            # Pace sanity-check: ~2.2 words/sec.
+            # 4s = 7-10 words (reject outside 5-13)
+            # 6s = 11-15 words (reject outside 8-19)
+            # 8s = 15-20 words (reject outside 12-26)
             word_count = len(narration.split())
-            if duration == 5:
-                if word_count > 14 or word_count < 5:
+            if duration == 4:
+                if word_count > 13 or word_count < 5:
                     raise ValueError(
-                        f"scenes[{idx}].narration has {word_count} words for a 5s scene "
-                        f"— must be 5-14 (target 8-11). Narration: {narration!r}"
+                        f"scenes[{idx}].narration has {word_count} words for a 4s scene "
+                        f"— must be 5-13 (target 7-10). Narration: {narration!r}"
                     )
-                elif not (8 <= word_count <= 11):
+                elif not (7 <= word_count <= 10):
                     logger.warning(
-                        "scenes[{}].narration has {} words for a 5s scene — expected 8-11",
+                        "scenes[{}].narration has {} words for a 4s scene — expected 7-10",
                         idx, word_count,
                     )
-            elif duration == 10:
-                if word_count > 28 or word_count < 13:
+            elif duration == 6:
+                if word_count > 19 or word_count < 8:
                     raise ValueError(
-                        f"scenes[{idx}].narration has {word_count} words for a 10s scene "
-                        f"— must be 13-28 (target 18-22). Narration: {narration!r}"
+                        f"scenes[{idx}].narration has {word_count} words for a 6s scene "
+                        f"— must be 8-19 (target 11-15). Narration: {narration!r}"
                     )
-                elif not (18 <= word_count <= 22):
+                elif not (11 <= word_count <= 15):
                     logger.warning(
-                        "scenes[{}].narration has {} words for a 10s scene — expected 18-22",
+                        "scenes[{}].narration has {} words for a 6s scene — expected 11-15",
+                        idx, word_count,
+                    )
+            elif duration == 8:
+                if word_count > 26 or word_count < 12:
+                    raise ValueError(
+                        f"scenes[{idx}].narration has {word_count} words for an 8s scene "
+                        f"— must be 12-26 (target 15-20). Narration: {narration!r}"
+                    )
+                elif not (15 <= word_count <= 20):
+                    logger.warning(
+                        "scenes[{}].narration has {} words for an 8s scene — expected 15-20",
                         idx, word_count,
                     )
 

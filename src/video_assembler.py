@@ -5,7 +5,7 @@ Assembles the final Instagram Reel from scene-card-driven AI-generated clips.
 
 Architecture: scene-card-driven (not voiceover-driven).
 - Duration is determined by the sum of scene card durations.
-- Each clip's native audio (from Wan 2.5) is the primary soundscape (90% volume).
+- Each clip's native audio (from Veo 3.1 Lite) is the primary soundscape (90% volume).
 - Text overlays are rendered via Pillow (not MoviePy TextClip).
 - Optional nasheed mixed at 12% underlay.
 
@@ -52,7 +52,7 @@ _FONTS_DIR = _ASSETS_DIR / "fonts"
 
 
 class VideoAssembler:
-    """Assembles scene-card-driven clips with Wan 2.5 native audio and Pillow text overlays into a final MP4."""
+    """Assembles scene-card-driven clips with Veo 3.1 Lite native audio and Pillow text overlays into a final MP4."""
 
     # Target canvas for Instagram Reels (9:16 portrait)
     TARGET_WIDTH = 1080
@@ -93,10 +93,10 @@ class VideoAssembler:
     WHISPER_DEVICE = "cpu"         # "cpu" or "cuda" (Mac: cpu only)
     WHISPER_COMPUTE_TYPE = "int8"  # int8 is fastest on CPU
 
-    # Audio mixing — Wan 2.5 native audio is the primary soundscape.
+    # Audio mixing — Veo 3.1 Lite native audio is the primary soundscape.
     # Ambient is ducked to avoid fighting the narration voice (200-800Hz overlap).
     # Nasheed is kept as a gentle underlay for spiritual continuity.
-    CLIP_AUDIO_VOLUME = 0.88   # Wan 2.5 clip audio (loudnorm handles level; slight duck for nasheed headroom)
+    CLIP_AUDIO_VOLUME = 0.88   # Veo 3.1 Lite clip audio (loudnorm handles level; slight duck for nasheed headroom)
     NASHEED_VOLUME = 0.12       # optional nasheed underlay at 12%
 
     # Audio normalization — normalize each clip to broadcast loudness before
@@ -153,7 +153,7 @@ class VideoAssembler:
             Ordered list of video clip file paths — one per scene.
         nasheed_path : str or None
             Optional path to background nasheed audio. Mixed at 20% volume on
-            top of the Wan 2.5 native audio. If ``None`` or file does not
+            top of the Veo 3.1 Lite native audio. If ``None`` or file does not
             exist, it is skipped.
         output_filename : str
             Name for the final output file (default ``"final.mp4"``).
@@ -203,7 +203,7 @@ class VideoAssembler:
                 # 2. Trim or loop to scene duration
                 clip = self._match_duration(clip, scene_duration)
 
-                # 3. Extract clip audio at 90% volume (Wan 2.5 native soundscape)
+                # 3. Extract clip audio at 90% volume (Veo 3.1 Lite native soundscape)
                 if clip.audio is not None:
                     scene_audio = clip.audio.with_volume_scaled(self.CLIP_AUDIO_VOLUME)
                     # Position audio at the correct timeline offset
@@ -557,7 +557,7 @@ class VideoAssembler:
         ----------
         scene_audio_tracks : list
             List of AudioClip objects, each already positioned at the correct
-            timeline offset and volume-scaled to 80%.
+            timeline offset and volume-scaled to 88%.
         total_duration : float
             Total video duration in seconds.
         nasheed_path : str or None
