@@ -150,7 +150,7 @@ def run_pipeline():
         sys.exit(1)
 
     # Optional vars — warn but don't abort
-    optional_vars = ["PEXELS_API_KEY", "OPENAI_API_KEY", "FAILURE_WEBHOOK_URL"]
+    optional_vars = ["PEXELS_API_KEY", "FAILURE_WEBHOOK_URL"]
     missing_optional = _check_env_vars(optional_vars)
     if missing_optional:
         logger.warning(
