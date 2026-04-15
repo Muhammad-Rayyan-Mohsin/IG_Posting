@@ -479,43 +479,41 @@ class ScriptGenerator:
                     f"scenes[{idx}].narration must be a non-empty string"
                 )
             # Pace sanity-check: ~2.2 words/sec.
-            # 4s = 7-10 words (reject outside 5-13)
-            # 6s = 11-15 words (reject outside 8-19)
-            # 8s = 15-20 words (reject outside 12-26)
-            word_count = len(narration.split())
+            # 4s = 7-10 words (hard min/max 5-13)
+            # 6s = 11-15 words (hard min/max 8-19)
+            # 8s = 15-20 words (hard min/max 12-26)
+            words = narration.split()
+            word_count = len(words)
             if duration == 4:
-                if word_count > 13 or word_count < 5:
-                    raise ValueError(
-                        f"scenes[{idx}].narration has {word_count} words for a 4s scene "
-                        f"— must be 5-13 (target 7-10). Narration: {narration!r}"
-                    )
-                elif not (7 <= word_count <= 10):
-                    logger.warning(
-                        "scenes[{}].narration has {} words for a 4s scene — expected 7-10",
-                        idx, word_count,
-                    )
+                min_words, max_words = 5, 13
+                target_min, target_max = 7, 10
             elif duration == 6:
-                if word_count > 19 or word_count < 8:
-                    raise ValueError(
-                        f"scenes[{idx}].narration has {word_count} words for a 6s scene "
-                        f"— must be 8-19 (target 11-15). Narration: {narration!r}"
-                    )
-                elif not (11 <= word_count <= 15):
-                    logger.warning(
-                        "scenes[{}].narration has {} words for a 6s scene — expected 11-15",
-                        idx, word_count,
-                    )
-            elif duration == 8:
-                if word_count > 26 or word_count < 12:
-                    raise ValueError(
-                        f"scenes[{idx}].narration has {word_count} words for an 8s scene "
-                        f"— must be 12-26 (target 15-20). Narration: {narration!r}"
-                    )
-                elif not (15 <= word_count <= 20):
-                    logger.warning(
-                        "scenes[{}].narration has {} words for an 8s scene — expected 15-20",
-                        idx, word_count,
-                    )
+                min_words, max_words = 8, 19
+                target_min, target_max = 11, 15
+            else:
+                min_words, max_words = 12, 26
+                target_min, target_max = 15, 20
+
+            # Robustness: never fail the whole pipeline for overlong narration.
+            if word_count > max_words:
+                trimmed = " ".join(words[:max_words])
+                scene["narration"] = trimmed
+                word_count = max_words
+                logger.warning(
+                    "scenes[{}].narration had {} words for a {}s scene; trimmed to {} words",
+                    idx, len(words), duration, max_words,
+                )
+            elif word_count < min_words:
+                logger.warning(
+                    "scenes[{}].narration has {} words for a {}s scene — below hard minimum {}",
+                    idx, word_count, duration, min_words,
+                )
+
+            if not (target_min <= word_count <= target_max):
+                logger.warning(
+                    "scenes[{}].narration has {} words for a {}s scene — expected {}-{}",
+                    idx, word_count, duration, target_min, target_max,
+                )
 
             if not isinstance(scene["text_lines"], list):
                 raise ValueError(f"scenes[{idx}].text_lines must be a list")
